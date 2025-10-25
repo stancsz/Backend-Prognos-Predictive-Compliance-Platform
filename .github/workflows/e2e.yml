@@ -1,0 +1,117 @@
+name: E2E Upload & Worker Integration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y netcat docker-compose
+
+      - name: Start local infra (Postgres + MinIO)
+        run: |
+          docker-compose -f infra/docker-compose.yml up -d --build
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if nc -z localhost 5432; then
+              echo "Postgres is up"
+              exit 0
+            fi
+            echo "Waiting for Postgres..."
+            sleep 2
+          done
+          echo "Postgres did not start in time" >&2
+          exit 1
+
+      - name: Wait for MinIO
+        run: |
+          for i in {1..30}; do
+            if nc -z localhost 9000; then
+              echo "MinIO is up"
+              exit 0
+            fi
+            echo "Waiting for MinIO..."
+            sleep 2
+          done
+          echo "MinIO did not start in time" >&2
+          exit 1
+
+      - name: Install package dependencies
+        run: |
+          npm install --prefix packages/api
+          npm install --prefix packages/worker
+
+      - name: Ensure MinIO bucket and apply DB migration
+        env:
+          POSTGRES_CONTAINER: ${{ steps.get_postgres_container.outputs.name || '' }}
+        run: |
+          # Ensure bucket (script should handle idempotency)
+          node packages/api/scripts/create_minio_bucket.js || echo "create_minio_bucket.js returned non-zero (continuing)"
+
+          # Find the postgres container started by docker-compose
+          POSTGRES_CONTAINER=$(docker ps --filter "ancestor=postgres:15-alpine" --format "{{.Names}}" | head -n1)
+          if [ -n "$POSTGRES_CONTAINER" ]; then
+            echo "Applying migration to $POSTGRES_CONTAINER"
+            docker exec -i $POSTGRES_CONTAINER sh -c 'psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}' < infra/migrations/001_create_evidence.sql
+          else
+            echo "Postgres container not found; failing"
+            exit 1
+          fi
+
+      - name: Start worker (background)
+        run: |
+          npm --prefix packages/worker run dev &> /tmp/worker.log &
+          sleep 1
+
+      - name: Start API (background)
+        run: |
+          npm --prefix packages/api run dev &> /tmp/api.log &
+          sleep 1
+
+      - name: Wait for API to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -sS http://localhost:3000/ >/dev/null 2>&1 || curl -sS http://localhost:3000/uploads >/dev/null 2>&1; then
+              echo "API is responding"
+              exit 0
+            fi
+            echo "Waiting for API..."
+            sleep 2
+          done
+          echo "API did not start in time" >&2
+          echo "==== API LOG ===="
+          sed -n '1,200p' /tmp/api.log || true
+          exit 1
+
+      - name: Run E2E upload test
+        run: |
+          set -o pipefail
+          node packages/api/test/upload_e2e.js
+
+      - name: Upload debug logs (on failure)
+        if: failure()
+        run: |
+          echo "=== API LOG ==="
+          sed -n '1,500p' /tmp/api.log || true
+          echo "=== WORKER LOG ==="
+          sed -n '1,500p' /tmp/worker.log || true
+
+      - name: Tear down infra
+        if: always()
+        run: docker-compose -f infra/docker-compose.yml down -v
