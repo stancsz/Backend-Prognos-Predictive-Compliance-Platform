@@ -1,11 +1,11 @@
 ﻿{
-  "name": "@constellation/api",
-  "version": "0.1.0",
-  "main": "dist/index.js",
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "lint": "eslint . --ext .ts",
-    "test": "echo \"No tests yet\""
-  }
+    "name":  "@constellation/api",
+    "version":  "0.1.0",
+    "main":  "dist/index.js",
+    "scripts":  {
+                    "build":  "tsc -p tsconfig.json",
+                    "start":  "node dist/index.js",
+                    "lint":  "eslint . --ext .ts",
+                    "test":  "echo \"No tests yet\""
+                }
 }
