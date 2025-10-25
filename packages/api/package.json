@@ -1,11 +1,35 @@
 ﻿{
-  "name": "@constellation/api",
+  "name": "packages-api",
   "version": "0.1.0",
+  "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p .",
     "start": "node dist/index.js",
-    "lint": "eslint . --ext .ts",
-    "test": "echo \"No tests yet\""
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "e2e": "node test/upload_e2e.js",
+    "lint": "eslint . --ext .ts,.js",
+    "test": "mocha --require ts-node/register test/**/*.test.js || echo \"no tests\""
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "@aws-sdk/client-s3": "^3.353.0",
+    "@aws-sdk/s3-request-presigner": "^3.353.0",
+    "pg": "^8.11.0",
+    "pdf-parse": "^1.1.1",
+    "node-fetch": "^2.6.7",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "ts-node": "^10.9.1",
+    "ts-node-dev": "^2.0.0",
+    "@types/node": "^20.5.1",
+    "@types/express": "^4.17.21",
+    "@types/pg": "^8.6.7",
+    "@types/node-fetch": "^2.6.2",
+    "eslint": "^8.44.0",
+    "mocha": "^10.2.0",
+    "@types/mocha": "^10.0.1"
   }
 }
