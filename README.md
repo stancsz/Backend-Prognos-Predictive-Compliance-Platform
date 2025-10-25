@@ -1,77 +1,94 @@
-﻿# Project Constellation — Developer README
+﻿# Compliance Legal Tech SaaS — Developer README
 
-This repository contains the PoC and dev scaffolding for Project Constellation: a modular AI-native SaaS for legal & compliance consulting. This README summarizes the high-level vision (from AGENT/TODO.md), explains the current repo layout, and documents how to run the local dev ingestion E2E (presign → upload → persist → worker index).
+Overview
+This repository implements a minimal ingestion pipeline for evidence files:
+- API (presign endpoint) generates S3 PUT presigned URLs and persists metadata to Postgres.
+- MinIO is used as the S3-compatible dev storage for local runs and CI.
+- Worker polls Postgres for uploaded items, downloads from S3, computes a sha256 checksum, extracts text (pdf-parse fallback to UTF-8), and updates the evidence row.
+- E2E test verifies presign -> upload -> DB persist -> worker indexing.
 
-## One-line summary of AGENT/TODO.md
-Project Constellation is a phased, modular platform combining workflow (engagement, projects, docs) with a data-driven compliance intelligence core (structured frameworks, regulatory feeds, anonymized benchmarking). Start with an MVP that solves evidence collection + project workflow, then add the intelligence/data moat and AI features.
-
-## Repo layout (relevant)
+Quick repo layout
 - infra/
-  - docker-compose.yml — local dev Postgres + MinIO + Adminer
-  - migrations/001_create_evidence.sql — evidence table migration
-- packages/api/
-  - src/index.ts — uploads API (presign PUT URL + persist metadata to Postgres or JSONL)
-  - test/upload_e2e.js — E2E runner: POST /uploads → PUT presigned URL → verify Postgres row
-  - scripts/create_minio_bucket.js — helper to create MinIO bucket
-- packages/worker/
-  - src/index.ts — worker: polls Postgres for uploaded_pending, downloads object from S3/MinIO, computes sha256, extracts text (pdf-parse), updates evidence row
-- AGENT/TODO.md — strategic product blueprint and roadmap (source of the extended plan)
+  - docker-compose.yml — Postgres + MinIO dev stack
+  - migrations/001_create_evidence.sql — evidence table schema
+  - ci-run-e2e.sh — local script to reproduce CI (starts infra, runs migration, starts API & worker, runs E2E)
+- packages/api
+  - src/index.ts — API server (POST /uploads => presign, persist metadata)
+  - test/upload_e2e.js — E2E script used by CI
+  - scripts/create_minio_bucket.js — idempotent helper to create MinIO bucket
+- packages/worker
+  - src/index.ts — worker that downloads objects, computes checksum, extracts text, updates DB
+- .github/workflows/e2e.yml — GitHub Actions workflow that runs ephemeral infra and executes the E2E
 
-## Quickstart (local dev)
-Prereqs: Docker / docker-compose, Node.js (LTS), npm, PostgreSQL/MinIO ports available.
+Local quickstart (Linux / macOS)
+1) Start dev infra:
+```bash
+docker-compose -f infra/docker-compose.yml up -d --build
+```
 
-1. Start infra
-   - docker-compose up -d
-   - Wait for Postgres and MinIO healthy.
+2) Apply DB migration (optional: infra script will do this in CI reproduction):
+```bash
+POSTGRES_CONTAINER=$(docker ps --filter "ancestor=postgres:15-alpine" --format "{{.Names}}" | head -n1)
+docker exec -i "$POSTGRES_CONTAINER" sh -c 'psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}' < infra/migrations/001_create_evidence.sql
+```
 
-2. Create required bucket (dev MinIO)
-   - node packages/api/scripts/create_minio_bucket.js
-   - or use `mc` if preferred.
+3) Install dependencies:
+```bash
+npm install --prefix packages/api
+npm install --prefix packages/worker
+```
 
-3. Start API (example)
-   - cd packages/api
-   - npm install
-   - set envs:
-     - DATABASE_URL=postgresql://devuser:devpass@localhost:5432/plts_dev
-     - AWS_ENDPOINT=http://localhost:9000
-     - AWS_ACCESS_KEY_ID=minioadmin
-     - AWS_SECRET_ACCESS_KEY=minioadmin
-     - S3_BUCKET=local-minio-bucket
-   - npm run dev
+4) Ensure MinIO bucket (idempotent):
+```bash
+node packages/api/scripts/create_minio_bucket.js
+```
 
-4. Start Worker (example)
-   - cd packages/worker
-   - npm install
-   - set same envs as API (DATABASE_URL, AWS_ENDPOINT, AWS_*)
-   - npm run dev
+5) Start worker and API (background):
+```bash
+npm --prefix packages/worker run dev &> /tmp/worker.log &
+npm --prefix packages/api run dev &> /tmp/api.log &
+```
 
-5. Run E2E test
-   - From repo root: node packages/api/test/upload_e2e.js
-   - The test:
-     - POST /uploads → receives presigned PUT URL + uploadId + objectKey
-     - PUT small payload to presigned URL
-     - Query Postgres and assert evidence row exists (status = uploaded_pending)
-   - Worker should pick up uploaded_pending rows, compute checksum & extracted_text, update status=indexed
+6) Run the E2E test (presign -> PUT -> verify DB row):
+```bash
+node packages/api/test/upload_e2e.js
+```
 
-## Current implemented behavior (dev)
-- API presigns PUT URLs and persists metadata to Postgres (evidence table) or JSONL fallback.
-- Worker polls Postgres for `uploaded_pending` rows, downloads from S3/MinIO, computes sha256, extracts text (pdf-parse optional), updates `checksum`, `extracted_text`, `status=indexed`, `indexed_at`.
-- Infra compose file contains Postgres, MinIO, Adminer.
-- E2E script verifies end-to-end ingestion to evidence row.
+Local CI reproduction (recommended)
+A helper script exists to reproduce the CI run locally and validate the full path:
+```bash
+bash infra/ci-run-e2e.sh
+```
+What the script does:
+- Starts infra via docker-compose
+- Waits for Postgres and MinIO
+- Installs package dependencies
+- Ensures MinIO bucket exists
+- Applies DB migration
+- Starts API and worker (logs to /tmp)
+- Runs `packages/api/test/upload_e2e.js`
+- Dumps logs and exits non-zero on failure
+- Tears down infra on completion
 
-## Known gaps / next tasks (prioritized)
-- Add robust migration tooling (Flyway / node-pg-migrate) and wire into infra.
-- Harden error handling, retries and idempotency in API and worker.
-- Add CI pipeline with ephemeral infra for E2E runs.
-- Implement OCR fallback and chunked text extraction for large files.
-- Add tests for worker processing and integrate into CI.
-- Security: secrets management, least-privilege S3 creds, rate limiting.
-- Observability: metrics, structured logging, health/readiness endpoints.
+GitHub Actions CI
+- Workflow: .github/workflows/e2e.yml
+- Triggers: push to main and pull requests
+- Behavior: spins up ephemeral Postgres + MinIO, applies migration, starts API & worker, runs E2E test, captures logs on failure, and tears down infra.
 
-## How to contribute
-- Follow the repo structure; keep infra-local helpers under infra/ and package code under packages/.
-- When adding DB schema changes, add a migration under infra/migrations and reference it in migration tooling.
-- Run E2E locally after changes: ensure API + Worker + infra up, then run packages/api/test/upload_e2e.js.
+Verify commits pushed
+```powershell
+git log --oneline -n 5
+git show 8886953:infra/ci-run-e2e.sh
+git show 32a9c09:.github/workflows/e2e.yml
+```
 
-## Contact / References
-See AGENT/TODO.md for the full strategic blueprint and product roadmap. Docs folder contains ERD and sequence diagrams for system interactions.
+Next recommended priorities
+- Update and enforce migrations tooling (node-pg-migrate or similar) and wire it into CI
+- Add integration tests validating worker idempotency and failure/retry behavior
+- Harden API & worker: idempotency keys, retries with backoff, structured logs, health/readiness endpoints
+- Implement a simple frontend upload UI (presign + PUT + progress + evidence list) and add UI E2E tests
+- Add CI observability (artifacts, test results) and flaky-test mitigation (retries/waits)
+
+Contact / notes
+- For AI-driven testing / assistants, the user prefers `vscode-lm:copilot/gpt5-mini`.
+- All CI artifacts and scripts are intentionally real (no mocks) to validate production-like behavior.
