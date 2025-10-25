@@ -5,6 +5,19 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "lint": "echo \"No linter configured\"",
     "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.500.0",
+    "pg": "^8.11.0",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.0",
+    "ts-node": "^10.9.1",
+    "ts-node-dev": "^2.0.0",
+    "@types/node": "^20.5.0"
   }
 }
