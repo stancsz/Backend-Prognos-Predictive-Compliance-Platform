@@ -1,6 +1,81 @@
-history
-tmp
-*.log
-.idea
-__pycache__
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+out/
+coverage/
+
+# Monorepo package artifacts
+packages/*/node_modules/
+packages/*/dist/
+packages/*/coverage/
+
+# Runtime env
 .env
+.env.local
+.env.*.local
+.env.test
+.env.production
+
+# Logs
+logs
+*.log
+pids
+*.pid
+*.seed
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# TypeScript
+*.tsbuildinfo
+
+# Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+
+# Python/virtualenv (if present)
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Docker
+docker-compose.override.yml
+**/.env.docker
+
+# Secrets and keys
+*.pem
+*.key
+*.crt
+secrets.yml
+
+# Misc
+.idea/
+*.iml
+
+# local workspace metadata
+*.swp
+.vagrant/
