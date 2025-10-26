@@ -17,10 +17,10 @@ function Wait-ForPort {
   )
   for ($i = 0; $i -lt $Attempts; $i++) {
     if (Test-NetConnection -ComputerName $Host -Port $Port -WarningAction SilentlyContinue -InformationLevel Quiet) {
-      Write-Host "$Host:$Port is reachable"
+      Write-Host "$($Host):$Port is reachable"
       return $true
     }
-    Write-Host "Waiting for $Host:$Port..."
+    Write-Host "Waiting for $($Host):$Port..."
     Start-Sleep -Seconds $DelaySec
   }
   return $false
@@ -127,7 +127,7 @@ Write-Host "E2E succeeded. Fetching DB evidence row for verification"
 # Try to show latest evidence row (requires docker)
 $postgresContainer = (docker ps --filter "ancestor=postgres:15-alpine" --format "{{.Names}}" | Select-Object -First 1)
 if ($postgresContainer) {
-  docker exec -i $postgresContainer sh -c "psql -U \${POSTGRES_USER:-postgres} -d \${POSTGRES_DB:-postgres} -c \"SELECT id, status, checksum, length(coalesce(extracted_text,'')) as extracted_len, created_at, indexed_at FROM evidence ORDER BY created_at DESC LIMIT 5;\""
+  docker exec -i $postgresContainer sh -c 'psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres} -c "SELECT id, status, checksum, length(coalesce(extracted_text,'')) as extracted_len, created_at, indexed_at FROM evidence ORDER BY created_at DESC LIMIT 5;"'
 } else {
   Write-Warning "Postgres container not found for verification"
 }
