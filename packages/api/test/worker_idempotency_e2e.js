@@ -17,7 +17,7 @@ const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const API_BASE = process.env.API_BASE || 'http://localhost:3000';
+const API_BASE = process.env.API_BASE || 'http://localhost:4000';
 
 // Prefer FORCE_DB_URL, otherwise fall back to the known local-dev Postgres (devuser/devpass/plts_dev).
 // This avoids relying on possibly-corrupted global envs that were observed during Windows runs.
