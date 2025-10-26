@@ -67,6 +67,11 @@ jobs:
             exit 1
           fi
 
+      - name: Install package dependencies
+        run: |
+          npm install --prefix packages/api
+          npm install --prefix packages/worker
+
       - name: Run sanitizeEnv unit tests
         run: |
           node infra/tests/run_sanitize_env_test.js
@@ -84,6 +89,17 @@ jobs:
           # demo-runner is a one-shot service that requests a presigned PUT URL, uploads the bundled sample,
           # and polls Postgres for the evidence row to reach status = "indexed".
           docker-compose -f infra/docker-compose.yml run --rm demo-runner
+
+      - name: Run idempotency E2E test (node script against running infra)
+        env:
+          FORCE_DB_URL: "postgres://devuser:devpass@localhost:5432/plts_dev"
+          AWS_ENDPOINT: "http://localhost:9000"
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          S3_BUCKET: "local-minio-bucket"
+          API_BASE: "http://localhost:4000"
+        run: |
+          node packages/api/test/worker_idempotency_e2e.js
 
       - name: Upload debug logs (on failure)
         if: failure()

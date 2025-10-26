@@ -1,84 +1,97 @@
-# Prioritized Technical Backlog (short)
+# Technical Backlog — Prioritized (Tech Lead Deliverables)
 
-This file captures the next high-impact technical work required to harden the ingestion pipeline, CI, tests, and observability.
+This file lists prioritized technical debt and production-readiness tasks, each with clear acceptance criteria so work can be picked up and validated.
 
-1) Stabilize CI E2E (priority: high)
-- Goal: Make CI reliably validate presign -> upload -> worker processing.
-- Tasks:
-  - Ensure GitHub Actions runs worker-health E2E and idempotency E2E.
-  - Add retries/timeouts and upload structured log artifacts on failure.
+Priority ordering: P0 (highest) → P1 → P2
+
+P0 — Demo / CI determinism (completed / verify)
+- Task: Ensure full presign → upload → ingest → index demo runs deterministically in Docker and CI.
+- Status: Implemented demo-runner, Dockerfiles, and wired CI to run demo-runner + idempotency E2E.
 - Acceptance criteria:
-  - CI "e2e" job completes reliably (≥3 consecutive runs) on main.
-  - On failure, API & worker logs are attached as artifacts in JSONL or plain logs.
-  - No fragile docker-exec psql usage left in CI.
+  - `docker-compose -f infra/docker-compose.yml up --build` runs API + worker + Postgres + MinIO and demo-runner uploads sample and exits 0 within 2 minutes.
+  - GitHub Actions `e2e` workflow runs demo-runner and idempotency E2E and uploads logs on failure.
+  - Demonstrated 3 consecutive CI runs without transient failures.
+- Notes: Verify CI artifacts and iterate on flaky tests.
 
-2) Local CI reproduction robustness (priority: high)
-- Goal: Developers reproduce CI locally with parity.
-- Tasks:
-  - Harden `infra/ci-run-e2e.sh` and `infra/ci-run-e2e.ps1` (idempotent, clear logs).
-  - Document preconditions and runtime in `infra/CI_RUN.md`.
+P0 — Migrations & DB hygiene
+- Task: Replace ad-hoc SQL apply with deterministic migrations tool; wire into CI.
+- Suggested work:
+  - Adopt a lightweight migrator (node-pg-migrate or simple script wrapper).
+  - Ensure migrations run in CI before services start, or as part of API startup when safe.
 - Acceptance criteria:
-  - Scripts run on machines with Docker+Node and exit 0 on success.
-  - Scripts emit concise logs and store stdout/stderr artifacts on failure.
+  - CI applies migrations idempotently and the evidence table schema is present before tests.
+  - Local `npm run migrate --prefix packages/api` applies same changes.
+  - Rollforward/rollback story documented for devs.
 
-3) Worker reliability & observability (priority: high)
-- Goal: Worker is idempotent, observable, and resilient.
-- Tasks:
-  - Ensure DB claiming is atomic (FOR UPDATE SKIP LOCKED + status transition).
-  - Add structured logs with worker_id, trace/upload_id and metrics endpoints or counters.
-  - Implement exponential backoff + retry metrics for S3 downloads.
+P0 — Worker robustness (idempotency, retries, backoff)
+- Task: Harden worker behavior for network failure, S3 timeouts, and duplicate uploads.
+- Suggested work:
+  - Add structured retry/backoff for S3 downloads with capped retries and jitter.
+  - Expand idempotency checks (ensure checksum reuse logic is safe with metadata differences).
+  - Add health and readiness endpoints for the worker (metrics optional).
 - Acceptance criteria:
-  - Worker exposes /health and /ready with lastIndexedAt and counts.
-  - Reprocessing the same evidence yields no duplicates; idempotency test passes.
-  - Logs include worker_id and upload_id for every processing unit.
+  - Worker recovers from transient S3/Postgres errors and marks permanent failures as `index_error`.
+  - Worker exposes a `/health` and `/ready` that reflect DB connectivity and last successful index time.
+  - Unit/integration test validates retry path (simulate transient failure and recovery).
 
-4) E2E & regression tests (priority: high → medium)
-- Goal: Real integration tests (no mocks) that cover critical flows.
-- Tasks:
-  - Add idempotency E2E (added).
-  - Add worker-health E2E to CI (added).
-  - Add a CI retry-once for flaky E2E runs or isolate flaky causes.
+P1 — Observability & structured logging
+- Task: Standardize logs (JSON), add minimal metrics counters and traceable request IDs.
 - Acceptance criteria:
-  - E2E suite validates the ingestion pipeline and runs in CI within documented timeouts.
-  - Regression tests added for any bug fixes.
+  - API and worker emit JSON log lines with ts/level/ctx.
+  - Demo/CI captures logs; a simple grep script can pull correlation ids.
+  - Basic Prometheus metrics endpoint on worker (optional) or counters logged.
 
-5) Migrations & schema management (priority: medium)
-- Goal: Deterministic migrations across environments.
-- Tasks:
-  - Keep or replace `run_migrations.js` with a robust migration runner (e.g., node-pg-migrate).
-  - Add checksum/version guard to avoid reapplying migrations incorrectly.
+P1 — CI gating and PR checks
+- Task: Add pr-check workflow that runs lint, typecheck, unit tests, and fast smoke E2E (demo-runner or headless checks).
 - Acceptance criteria:
-  - Migrations run reproducibly via `npm --prefix packages/api run migrate` both locally and in CI.
+  - `pr-check.yml` runs on PRs and blocks merging until passing.
+  - PR template enforces Plan, Tests, and Acceptance Criteria fields.
 
-6) Logging & centralized observability (priority: medium)
-- Goal: Consistent JSONL logs for easier triage.
-- Tasks:
-  - Standardize log schema: { ts, level, service, worker_id, trace_id, msg, meta }.
-  - Add CI artifact upload of JSONL logs on failures.
+P1 — Tests: integration & E2E expansion (no mocks)
+- Task: Expand real-infra E2E tests:
+  - Idempotency (exists)
+  - Worker retry recovery
+  - Upload/ingest latency bounds
 - Acceptance criteria:
-  - CI artifacts contain JSONL logs with consistent keys and are searchable.
+  - Tests run against docker-compose infra in CI.
+  - Tests are deterministic and stable (less than 5% flakiness target).
+  - Any flaky test is quarantined with a linked issue.
 
-7) Security & credential hygiene (priority: medium)
-- Goal: Avoid leaking credentials and prepare for real S3.
-- Tasks:
-  - Ensure MinIO creds used in tests are ephemeral and documented.
-  - Move any production-like secrets to CI secrets; do not commit plaintext credentials.
+P2 — Repo hygiene & docs
+- Task: Add CODEOWNERS, runbooks (ci-gates.md, worker-extract.md), and contributor onboarding.
 - Acceptance criteria:
-  - No plaintext prod secrets in repo; CI uses Actions secrets for sensitive data.
+  - CODEOWNERS present and PR template enforced.
+  - Runbooks provide commands to reproduce CI locally and triage steps for failures.
 
-8) Release readiness & runbook (priority: low → medium)
-- Goal: Safe rollout and rollback.
-- Tasks:
-  - Create a release checklist and rollback runbook (monitoring, metrics thresholds).
-  - Define release criteria (green CI, health endpoints passing).
+P2 — Security & secrets handling
+- Task: Review secrets use in compose and CI, add guidance for local dev creds and CI secrets.
 - Acceptance criteria:
-  - Runbook present and validated; alerts for processing error rate/backlog thresholds defined.
+  - No secrets checked into repo.
+  - CI uses repository secrets for any cloud creds; local defaults documented.
 
-Quick next actionable items (immediate)
-- Trigger CI: push an empty commit to main to run `.github/workflows/e2e.yml`.
-- Run local reproduction: `bash infra/ci-run-e2e.sh` or PowerShell `infra/ci-run-e2e.ps1`.
-- Monitor CI logs/artifacts and triage failures; fix code and add regression tests where necessary.
+How to pick up work
+- Each task should be implemented on its own branch with:
+  - A short plan in the PR description (one-line motivation + acceptance criteria).
+  - Tests demonstrating the fix.
+  - Small, reviewable commits and a final squash commit.
 
-Notes
-- New files added in this cycle: `packages/api/test/worker_idempotency_e2e.js`.
-- CI/workflow and PowerShell fixes were committed and pushed to main.
+Recent completions (for context)
+- Demo-runner + Dockerfiles + compose wiring — infra/demo-runner/*
+- README updated with local demo instructions
+- CI e2e workflow updated to run demo-runner then idempotency E2E
+- Idempotency E2E test default API port aligned to compose (4000)
+
+Task progress checklist
+- [x] Analyze requirements and inspect docker-compose
+- [x] Add demo-runner script and package.json
+- [x] Create Dockerfile for API, worker, demo-runner
+- [x] Wire services into infra/docker-compose.yml
+- [x] Update README with demo instructions
+- [x] Update CI e2e to run demo-runner and idempotency test
+- [ ] Migrations tooling: adopt and wire into CI
+- [ ] Worker: add retries/backoff and readiness endpoints
+- [ ] Observability: JSON logs + basic metrics
+- [ ] pr-check CI: lint/typecheck/tests gating
+- [ ] Expand deterministic E2E tests and stabilize flaky tests
+- [ ] Add CODEOWNERS and runbooks
+- [ ] Security review & secret handling guidance

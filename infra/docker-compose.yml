@@ -44,7 +44,7 @@ services:
 
   api:
     build:
-      context: .
+      context: ..
       dockerfile: infra/Dockerfile.api
     container_name: plts_api
     depends_on:
@@ -67,7 +67,7 @@ services:
 
   worker:
     build:
-      context: .
+      context: ..
       dockerfile: infra/Dockerfile.worker
     container_name: plts_worker
     depends_on:
@@ -89,7 +89,7 @@ services:
 
   demo-runner:
     build:
-      context: .
+      context: ..
       dockerfile: infra/Dockerfile.demo
     container_name: plts_demo
     depends_on:
