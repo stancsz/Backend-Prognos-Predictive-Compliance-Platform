@@ -3,13 +3,21 @@ import { Client as PgClient } from "pg";
 import crypto from "crypto";
 import stream from "stream";
 import { promisify } from "util";
+import http from "http";
 
 const pipeline = promisify(stream.pipeline);
+
+function log(level: string, message: string, meta?: any) {
+  const entry = Object.assign({ ts: new Date().toISOString(), level, message }, meta || {});
+  console.log(JSON.stringify(entry));
+}
 
 const S3_BUCKET = process.env.S3_BUCKET || "local-minio-bucket";
 const REGION = process.env.AWS_REGION || "us-west-2";
 const POLL_INTERVAL_MS = parseInt(process.env.WORKER_POLL_MS || "5000", 10);
 const BATCH_SIZE = parseInt(process.env.WORKER_BATCH_SIZE || "5", 10);
+const WORKER_PORT = parseInt(process.env.WORKER_PORT || "4001", 10);
+let lastIndexedAt: string | null = null;
 
 let pg: PgClient | null = null;
 

@@ -9,6 +9,11 @@ import { Client as PgClient } from "pg";
 const app = express();
 app.use(express.json());
 
+function log(level: string, message: string, meta?: any) {
+  const entry = Object.assign({ ts: new Date().toISOString(), level, message }, meta || {});
+  console.log(JSON.stringify(entry));
+}
+
 const S3_BUCKET = process.env.S3_BUCKET || "local-minio-bucket";
 const REGION = process.env.AWS_REGION || "us-west-2";
 const METADATA_FILE = path.join(__dirname, "../data/evidence.jsonl");
@@ -178,6 +183,21 @@ app.post("/uploads", async (req, res) => {
 });
 
 app.get("/health", (_req, res) => res.json({ status: "ok", db: !!pg }));
+
+app.get("/ready", async (_req, res) => {
+  const dbOk = !!pg;
+  let s3Ok = true;
+  try {
+    if (process.env.AWS_ENDPOINT) {
+      await s3.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
+    }
+  } catch (err) {
+    s3Ok = false;
+    log('warn', 's3 readiness check failed', { error: err && (err as any).message });
+  }
+  const ready = dbOk && s3Ok;
+  res.json({ ready, db: dbOk, s3: s3Ok, bucket: S3_BUCKET });
+});
 
 const PORT = process.env.PORT || 4000;
 
