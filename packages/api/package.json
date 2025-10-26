@@ -12,7 +12,8 @@
     "migrate": "node scripts/run_migrations.js",
     "migrate-local": "node scripts/run_migrations_local.js",
     "lint": "eslint . --ext .ts,.js",
-    "test": "mocha --require ts-node/register \"test/**/*.test.ts\" || echo \"no tests\""
+    "test": "mocha --require ts-node/register \"test/**/*.test.ts\" || echo \"no tests\"",
+    "test:integration": "mocha --require ts-node/register \"test/integration/**/*.test.ts\""
   },
   "dependencies": {
     "express": "^4.18.2",
