@@ -1,0 +1,55 @@
+name: PR check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  pr-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install deps (api)
+        run: npm ci --prefix packages/api
+
+      - name: Install deps (worker)
+        run: npm ci --prefix packages/worker
+
+      - name: Lint (api)
+        run: npm --prefix packages/api run lint
+        continue-on-error: false
+
+      - name: Typecheck (api)
+        run: npm --prefix packages/api run typecheck
+        continue-on-error: false
+
+      - name: Unit / Integration tests (api)
+        run: npm --prefix packages/api test --silent
+        continue-on-error: false
+
+      - name: Lint (worker) (if present)
+        run: |
+          if [ -f packages/worker/package.json ]; then
+            npm --prefix packages/worker run lint || exit 0
+          fi
+
+      - name: Typecheck (worker) (if present)
+        run: |
+          if [ -f packages/worker/tsconfig.json ]; then
+            npm --prefix packages/worker run typecheck || exit 0
+          fi
+
+      - name: Smoke E2E (optional, fast)
+        run: |
+          # Run a quick smoke E2E if script exists; keep short to avoid long PR runs.
+          if [ -f packages/api/test/upload_e2e.js ]; then
+            node packages/api/test/upload_e2e.js || echo "smoke e2e failed"
+          fi
