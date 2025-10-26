@@ -1,103 +1,87 @@
-# Compliance Legal Tech SaaS — Developer README (Repivot: MVP-first)
+# Prognos — Backend (Predictive Compliance Platform)
 
-Overview — repivot summary
-This repository is a self-contained, developer-focused MVP: a minimal, production-alike ingestion pipeline that proves the core evidence collection and indexing workflow for a legal & compliance product. The goal is NOT to build the full Constellation platform yet — instead, prove the smallest, highest-value vertical slice that delivers repeatable developer velocity, deterministic CI, and production-quality primitives that can be iterated on safely.
+Status: WIP — Backend rebuild in progress
 
-Core mission for this repo (MVP)
-- Validate a reliable presign → upload → ingest → index flow for evidence files using real infra (Postgres + S3-compatible MinIO) and real runtime behavior (API + worker + E2E).
-- Harden the developer experience so contributors can run, test, and iterate locally and in CI without mocks or brittle wiring.
-- Produce a repeatable set of artifacts (CI gates, runbooks, playbooks, PR/issue templates) so the team can scale execution without diverging architecture or scope.
+This repository is intended to host the backend for the Frontend-Prognos application (see the `Frontend-Prognos-Predictive-Compliance-Platform/` folder). The current backend needs a full clean-up and rebuild to provide a stable, well-documented scaffold for frontend integration and future development.
 
-What this repo currently contains (short)
-- infra/docker-compose.yml — local Postgres + MinIO dev stack
-- infra/migrations/001_create_evidence.sql — evidence table schema
-- packages/api — presign endpoint and E2E test
-- packages/worker — poller that downloads objects, computes checksum, extracts text, updates DB
-- .github/workflows/e2e.yml — ephemeral infra CI that runs the end-to-end test
+## Goals
+- Remove/clean legacy and experimental code.
+- Scaffold a clean, well-documented backend API surface for the frontend.
+- Provide a reproducible local/dev environment (Docker + compose).
+- Add an OpenAPI/Swagger contract to drive frontend integration.
+- Implement CI basics, tests, and developer guidance.
 
-Why the repivot
-Work has drifted toward broad platform thinking. That work is valuable, but it currently dilutes engineering velocity and makes it hard to measure progress. We must re-focus on completing a production-grade MVP slice first. After the slice is stable and well-tested, expand modules and the AI/data roadmap incrementally.
+## Proposed tech stack (suggested)
+- Language: TypeScript (Node.js)
+- Web framework: Express / Fastify (TypeScript-first)
+- Database: PostgreSQL (migrations via Knex/TypeORM/Prisma)
+- Object store: MinIO (s3-compatible) — already used in infra
+- Queue/worker: Redis / Bull or existing worker package
+- Containerization: Docker + docker-compose (infra/)
+- Testing: Jest / Supertest (API E2E)
+- API spec: OpenAPI 3.0 (yaml) at packages/api/openapi.yaml
 
-Demo & Proof-of-Concept (POC) requirements — must-have for MVP
-- A short interactive demo is required to validate product fit and to demonstrate the core flow to stakeholders.
-- A fully working POC is required: API, worker, DB, object storage, and a minimal client (web UI or CLI) that performs presign -> upload -> confirm indexing -> map -> summary.
-- The entire POC (server + client + infra) must be runnable inside the provided Docker environment (infra/docker-compose.yml). Running `docker-compose up --build` (or the CI reproduction script) should start Postgres, MinIO, API, worker, and a simple demo client or demo runner service.
-- Acceptance criteria for demo/POC:
-  - `docker-compose up --build` brings the environment up and the demo client can upload a sample file and show it indexed within the running UI or via the demo log output.
-  - Demo includes a short README section or script that reproduces the flow in under 2 minutes.
-  - POC is deterministic enough to run in CI (used by the E2E) or locally with infra/ci-run-e2e.sh.
+## Repository layout (current)
+- packages/api — API implementation (TypeScript)
+- packages/worker — background job code
+- packages/web — example frontend (legacy)
+- infra — docker compose, Dockerfiles, infra scripts
+- Frontend-Prognos-Predictive-Compliance-Platform — actual frontend app
+- docs — architecture notes, ERD, backlog, etc.
 
-MVP scope (this repo — next 4–8 weeks)
-- Single vertical slice: secure upload + evidence persistence + worker indexing + deterministic E2E
-- No external model integrations in CI; no marketplace APIs; no multi-framework intelligence yet
-- Real infra only (Postgres + MinIO), deterministic scripts, clear runbooks for local dev and CI
-- Demo & POC requirement enforced before any Phase 2 feature merges
+## Immediate next steps (scaffold & cleanup)
+1. Audit and remove legacy files that won't be part of the new backend.
+2. Define API surface via OpenAPI and store spec in `packages/api/`.
+3. Create a minimal TypeScript backend scaffold (routes, auth stub, healthcheck, docs).
+4. Add docker-compose service for the API (connected to infra/docker-compose.yml).
+5. Wire CI to run lint, typecheck, and tests.
+6. Add README sections inside `packages/api/` describing local dev steps and API endpoints.
 
-Immediate priorities (P0)
-1. Stabilize CI E2E: make .github/workflows/e2e.yml reliable; surface flaky test mitigations and artifacts.
-2. Harden DB migrations: adopt simple migrations tooling and wire into CI.
-3. Worker robustness: idempotency, retries/backoff, structured logging, health/readiness endpoints.
-4. Observability: structured logs, basic metrics and request tracing for API + worker.
-5. Test quality: replace any remaining mocks in tests with real integration flows; add worker idempotency and failure/retry tests.
-6. Repo hygiene: add PR template, ISSUE_TEMPLATEs, CODEOWNERS, and lightweight pr-check.yml to enforce gates.
-7. Demo & POC: add a minimal client demo (web or CLI) and ensure `infra/docker-compose.yml` starts server + client for local demos.
+## Getting started (developer)
+1. Review infra/docker-compose.yml — it contains the database and MinIO services.
+2. Add/maintain an OpenAPI spec at `packages/api/openapi.yaml`.
+3. Create a minimal server in `packages/api/src/`:
+   - health endpoint: `GET /health`
+   - API root: `GET /api` (serves OpenAPI UI)
+   - auth stub and example endpoints to match frontend needs.
+4. Provide a local start: `docker-compose up` (api, db, minio) and `npm run dev` for local hot-reload (to be implemented in packages/api).
 
-Near-term roadmap (deliverables)
-- Week 0–1: Make infra/ci-run-e2e.sh deterministic and fast; ensure migration runs reliably in CI.
-- Week 1–3: Implement idempotency in worker; add integration tests for retry scenarios.
-- Week 3–5: Add pr-check CI with lint + typecheck + unit/integration tests; add PR & issue templates and CODEOWNERS.
-- Week 5–8: Add runbooks/docs for dev onboarding (infra/README.md, docs/runbooks/*), publish AGENT playbooks to guide contributors.
-- Week 6–8: Deliver demo & POC: client + server contained in docker-compose, demo instructions, and a short demo script.
+Example (once scaffolded):
+```bash
+# from repo root
+cd packages/api
+npm install
+npm run dev
+# or
+docker-compose -f infra/docker-compose.yml up --build
+```
 
-How the AGENT playbooks fit (roles)
-- Tech Lead: own architecture decisions, define acceptance criteria for the MVP slice, enforce PR gates.
-- Senior Engineer: pick the highest-impact task from the backlog, state plan in PR, implement to production standards (no mocks), write tests & docs.
-- QA: drive integration/E2E tests against real infra, fix flaky tests, verify idempotency and failure modes.
-- Product: define the minimal acceptance criteria for the MVP slice and measure success (e.g., stable E2E in CI, reproducible local runs).
+## Frontend integration
+- The frontend lives in `Frontend-Prognos-Predictive-Compliance-Platform/`. Use the OpenAPI spec to generate client types or mock servers for the frontend.
+- Keep the API contract stable: changes to the spec must be reviewed and versioned.
 
-Acceptance criteria for the MVP
-- CI passes E2E reliably for 5 consecutive runs without human intervention.
-- Worker is idempotent for duplicate uploads and has retry/backoff behavior that recovers from transient infra failures.
-- Migrations applied in CI automatically and deterministically.
-- PRs require passing pr-check gates and a completed PR template checklist.
-- Demo/POC runs via Docker Compose and demonstrates presign → upload → ingest → index → map → summary.
+## Docs & artifacts
+- Keep architecture and decisions in `docs/` (ERD, sequence diagrams, MVP checklists).
+- Add migration scripts to `infra/migrations/` and document usage.
 
-Next actions (what I will do if instructed)
-- Update AGENT/AGENT.md with completed role playbooks and commit.
-- Add .github/PULL_REQUEST_TEMPLATE.md and ISSUE_TEMPLATEs, and a pr-check workflow on a branch `chore/repo-playbooks`.
-- Implement worker idempotency tests and improve ci-run-e2e.sh to be less flaky.
-- Add a minimal demo client and wire it into infra/docker-compose.yml so the demo runs with `docker-compose up --build`.
-- Iterate on README and docs to reflect progress and milestones.
+## Contribution & Ownership
+- Use PRs for changes. Include issue/PR templates where appropriate.
+- Maintain clear CHANGELOG and versioning for API changes.
 
-## Running the demo locally (docker-compose)
+## Roadmap / TODO
+- [ ] Audit and remove legacy backend code
+- [ ] Create `packages/api/openapi.yaml` (OpenAPI spec)
+- [ ] Scaffold minimal TypeScript API (health, docs, example endpoints)
+- [ ] Add docker-compose service for the API and document local run
+- [ ] Add CI for lint, typecheck, tests
+- [ ] Implement basic integration tests (packages/api/test/)
+- [ ] Document developer onboarding and API contract
+- [ ] Coordinate with frontend team to validate the scaffold
 
-The repository includes a minimal automated demo runner that exercises the required presign → upload → ingest → index flow using real infra (Postgres + MinIO) and the API + worker services. The demo-runner now also exercises the mapping and summary endpoints after evidence is indexed.
+## Contacts
+- Repo owner: see git history / committers
+- For architecture decisions: maintainers listed in `docs/TECH_LEAD.md`
 
-Quick start
-1. Build and start the demo environment:
-   - `docker-compose -f infra/docker-compose.yml up --build`
-2. What runs:
-   - Postgres (5432)
-   - MinIO (9000) + console (9001)
-   - API server (4000)
-   - Worker (background poller)
-   - demo-runner (one-shot container that performs presign → PUT → polls DB for indexing → mapping → summary)
-3. Demo runner behavior:
-   - The demo-runner requests a presigned PUT URL from the API, uploads `sample.txt` (bundled from `packages/api/test/fixtures/sample.txt`), then polls Postgres for the evidence row to reach `status = indexed`.
-   - After indexing the demo-runner fetches frameworks and controls from the API, posts a mapping for the uploaded evidence to one control (POST /mappings), and then requests the project summary (GET /projects/demo/summary) to demonstrate end-to-end mapping coverage.
-   - Timeout for indexing: ~2 minutes (configurable in `infra/demo-runner/index.js`).
-   - Exit codes: `0` = success (indexed and mapping exercised), non-zero = failure (see container logs for details).
-4. Useful commands:
-   - Tail all logs: `docker-compose -f infra/docker-compose.yml logs -f`
-   - Tail demo-runner logs only: `docker-compose -f infra/docker-compose.yml logs -f demo-runner`
-   - Re-run demo-runner (after services are up): `docker-compose -f infra/docker-compose.yml run --rm demo-runner`
-   - Inspect recent evidence rows: `node infra/query_evidence_runner.js` (connects to the configured DATABASE_URL)
-5. Troubleshooting:
-   - Ensure Docker and docker-compose are installed and running.
-   - Confirm ports 4000, 9000, and 5432 are free or adjust port mappings in `infra/docker-compose.yml`.
-   - If demo-runner times out, check API and worker logs to ensure the worker is connected to the same DATABASE_URL and S3 endpoint (MinIO).
-   - To inspect MinIO, open the web console at `http://localhost:9001` (credentials: `minioadmin` / `minioadmin`).
-   - To view database rows directly, use Adminer at `http://localhost:8080` or `psql` against `postgres://devuser:devpass@localhost:5432/plts_dev`.
+---
 
-Contact / notes
-- Treat this repository as the canonical MVP — keep scope narrow and production-quality. AI and data-driven features belong in Phase 2 once the MVP slice is stable and instrumented.
+This README is intentionally concise — more detailed developer guides, API specs, and setup docs should be added under `packages/api/` and `docs/` as the rebuild proceeds.

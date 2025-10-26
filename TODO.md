@@ -1,55 +1,46 @@
-# Repo TODOs — Align with AGENT/TODO.md
+# Backend refactor & rescanffold — Progress TODO
 
-This file lists concrete gaps, priorities, and actionable tasks to bring the repository into alignment with the high-level product requirements in `AGENT/TODO.md`. Use these items to triage work, create issues, and scaffold missing pieces (demos, docs, design, and feature scaffolding).
+This file tracks the high-level work for rebuilding and cleaning the backend to provide a stable scaffold for the Frontend Prognos app.
 
-Summary
-- The repo currently contains infrastructure, API, worker, and a demo runner, but lacks:
-  - a user-friendly demo and run instructions
-  - clear product README and docs mapping to the "Constellation" vision
-  - scaffolding and TODOs in code where major features described in AGENT/TODO.md are missing
-  - design assets / UX flows and a simple usable frontend experience
-  - structured framework / controls data model and evidence -> control mapping
-  - living dashboards, client portal, and workflow templates
-  - tests and e2e flows that demonstrate core user journeys
+Completed
+- [x] Analyze repository and existing API package
+- [x] Create OpenAPI spec placeholder (packages/api/openapi.yaml)
+- [x] Scaffold minimal TypeScript API (packages/api/src/app.ts)
+- [x] Add startup entrypoint (packages/api/src/server.ts)
+- [x] Update packages/api/package.json (scripts, main)
+- [x] Add packages/api/Dockerfile
+- [x] Update infra/Dockerfile.api to use new server entrypoint
+- [x] Add packages/api/README.md (dev + docker notes)
+- [x] Archive legacy `packages/api/src/index.ts` -> `packages/api/src/index.legacy.ts`
+- [x] Add basic integration test for /health (packages/api/test/health.test.ts)
+- [x] Fix tsconfig to include test files (packages/api/tsconfig.json)
 
-High-level gaps mapped to AGENT/TODO.md
-- Demo & onboarding: no clear, runnable end-to-end demo for a consultant to try the product quickly.
-- Docs & README: missing product-oriented README that explains MVP scope, how to run demo, and next steps.
-- Design & UX: no mockups / UX flows or simple web UI exposing client portal or dashboards.
-- Core features: evidence repository, frameworks library (structured controls), mapping UI/workflow, analytics/dashboard, basic billing/time-tracking.
-- Data strategy: no schema for structured compliance objects (controls, frameworks, evidence metadata).
-- AI/automation: placeholder only — no integration or scaffolding for doc summarization or evidence mapping.
-- Tests & CI: add e2e demo tests and improve existing tests to cover core flows.
+In progress / Next
+- [ ] Restore and finalize OpenAPI spec content in `packages/api/openapi.yaml`
+- [ ] Add CI workflow (lint, typecheck, test) in `.github/workflows/ci.yml`
+- [ ] Add more integration tests (uploads, mappings, projects summary)
+- [ ] Add Docker-compose integration note (verify infra/docker-compose.yml references)
+- [ ] Decide fate of legacy code and remove or archive remaining legacy files
+- [ ] Implement a stable migrations system and move SQL migration files to infra/migrations
+- [ ] Add API docs / Swagger UI serve route or static spec packaging
+- [ ] Coordinate with frontend team to generate client types and validate contract
 
-Actionable checklist
-- [x] Analyze requirements (read `AGENT/TODO.md`)
-- [ ] Create a short, runnable demo (infra + api + worker + web) that shows: upload evidence -> map to control -> view simple dashboard
-- [ ] Add a top-level "How to demo" section in README.md linking to demo runner and environment setup
-- [ ] Create per-package TODOs:
-  - [ ] `packages/api/TODO.md` — define APIs for frameworks, evidence, mapping, auth
-  - [ ] `packages/web/TODO.md` — simple UI routes: login, upload, mapping, dashboard
-  - [ ] `packages/worker/TODO.md` — evidence processing (OCR/NLP) scaffold and background jobs
-  - [ ] `infra/TODO.md` — demo credentials, local env, docker-compose run steps
-- [ ] Add structured data schema files (JSON/YAML) for frameworks & controls under `packages/api/data/` (scaffold SOC2 example)
-- [ ] Insert inline TODO comments in key code locations (API endpoints, worker processing, web entrypoints) pointing to AGENT/TODO.md requirements
-- [ ] Add a minimal design / UX folder (`design/`) with 2-3 annotated wireframes (upload, mapping, dashboard)
-- [ ] Document MVP scope in README: single framework (SOC 2), single billing mode (hourly), key user flows
-- [ ] Create an infra/demo README with commands to run a local demo using existing demo-runner
-- [ ] Add automated demo smoke tests (infra/demo-runner + simple webdriver or puppeteer script)
-- [ ] Prioritize backlog: map items from `docs/TECHNICAL_BACKLOG.md` to AGENT/TODO.md deliverables
-- [ ] Add CONTRIBUTING.md and simple dev-run checklist for new contributors
+How to run locally (dev)
+- cd packages/api
+- npm ci
+- npm run dev   # hot-reload via ts-node-dev
+- npm test
 
-Short-term priorities (first 2 days)
-- [ ] README: add "Quick demo" and "MVP scope" sections
-- [ ] Create `packages/api/TODO.md` and `infra/TODO.md`
-- [ ] Scaffold `packages/api/data/soc2.jsonl` with one sample control and evidence mapping example
-- [ ] Add inline TODOs to `packages/api/src/index.ts` and `packages/worker/src/index.ts` where evidence/workflow logic should live
-- [ ] Add run instructions for `infra/demo-runner` in `infra/README.md`
+How to run with docker-compose (local)
+- docker-compose -f infra/docker-compose.yml up --build
 
-How to use this file
-- Convert each checklist item into issues with labels (priority/severity/component).
-- Attach owners and estimate times for MVP items.
-- Keep this file updated as pieces are completed.
+Notes
+- The scaffold uses a pluggable persistence model: DATABASE_URL -> Postgres, fallback -> JSONL files in `packages/api/data`.
+- S3/MinIO integration is driven by AWS_ENDPOINT / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY environment variables (infra compose already sets these for local dev).
+- CI should run `npm ci` in `packages/api` then `npm run lint && npm run build && npm test`.
 
-Reference
-- See `AGENT/TODO.md` for the full strategic vision and feature requirements to align with.
+If you want, I can now:
+- implement the CI workflow and add a simple GitHub Actions `ci.yml`, and
+- finish the OpenAPI spec at `packages/api/openapi.yaml` to match the implemented endpoints.
+
+Reply with "yes" to approve adding CI + finishing the OpenAPI spec and I'll proceed.

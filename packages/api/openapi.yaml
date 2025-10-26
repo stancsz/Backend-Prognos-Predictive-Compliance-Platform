@@ -1,0 +1,190 @@
+openapi: 3.0.3
+info:
+  title: Prognos API
+  version: 0.1.0
+  description: OpenAPI spec for the Prognos backend (health, readiness, uploads, frameworks, mappings, project summary).
+servers:
+  - url: http://localhost:4000
+    description: Local dev
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /ready:
+    get:
+      summary: Readiness check (DB + S3)
+      responses:
+        '200':
+          description: Readiness status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ready: { type: boolean }
+                  db: { type: boolean }
+                  s3: { type: boolean }
+                  bucket: { type: string }
+  /frameworks:
+    get:
+      summary: List frameworks
+      responses:
+        '200':
+          description: List of frameworks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  frameworks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Framework'
+  /frameworks/{id}/controls:
+    get:
+      summary: Get controls for a framework
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Framework id
+      responses:
+        '200':
+          description: Controls list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  controls:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Control'
+        '404':
+          description: Framework not found
+  /uploads:
+    post:
+      summary: Create an upload presigned URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+      responses:
+        '200':
+          description: Upload URL and metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Invalid request
+  /mappings:
+    post:
+      summary: Persist a mapping (projectId, evidenceId, controlId)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MappingRequest'
+      responses:
+        '200':
+          description: Mapping created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mappingId: { type: string }
+                  createdAt: { type: string, format: date-time }
+        '400':
+          description: Missing required fields
+  /projects/{id}/summary:
+    get:
+      summary: Project summary (counts)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Summary object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectSummary'
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        db:
+          type: boolean
+    Framework:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        version: { type: string }
+        description: { type: string }
+    Control:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+    UploadRequest:
+      type: object
+      required:
+        - filename
+        - projectId
+      properties:
+        filename: { type: string }
+        projectId: { type: string }
+        contentType: { type: string }
+    UploadResponse:
+      type: object
+      properties:
+        uploadId: { type: string }
+        url:
+          oneOf:
+            - type: string
+            - type: "null"
+        objectKey: { type: string }
+    MappingRequest:
+      type: object
+      required:
+        - projectId
+        - evidenceId
+        - controlId
+      properties:
+        projectId: { type: string }
+        evidenceId: { type: string }
+        controlId: { type: string }
+        notes: { type: string }
+    ProjectSummary:
+      type: object
+      properties:
+        projectId: { type: string }
+        totalEvidence: { type: integer }
+        indexedEvidence: { type: integer }
+        mappingsCount: { type: integer }
+        controlsTotal: { type: integer }
+        controlsCovered: { type: integer }
+        timestamp: { type: string, format: date-time }
