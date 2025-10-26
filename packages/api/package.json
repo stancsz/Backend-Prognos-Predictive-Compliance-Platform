@@ -9,6 +9,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "e2e": "node test/upload_e2e.js",
     "migrate": "node scripts/run_migrations.js",
+    "migrate-local": "node scripts/run_migrations_local.js",
     "lint": "eslint . --ext .ts,.js",
     "test": "mocha --require ts-node/register test/**/*.test.js || echo \"no tests\""
   },
