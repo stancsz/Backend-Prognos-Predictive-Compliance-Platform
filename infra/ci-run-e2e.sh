@@ -37,15 +37,9 @@ echo "4) Ensure MinIO bucket (idempotent)"
 node packages/api/scripts/create_minio_bucket.js || echo "create_minio_bucket.js exited non-zero (continuing)"
 
 echo "5) Apply DB migration"
-POSTGRES_CONTAINER=$(docker ps --filter "ancestor=postgres:15-alpine" --format "{{.Names}}" | head -n1)
-if [ -n "$POSTGRES_CONTAINER" ]; then
-  echo "Applying migration to $POSTGRES_CONTAINER"
-  docker exec -i "$POSTGRES_CONTAINER" sh -c 'psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}' < infra/migrations/001_create_evidence.sql
-else
-  echo "Postgres container not found" >&2
-  docker-compose -f infra/docker-compose.yml logs
-  exit 1
-fi
+# Run migrations using the repository's migrate script. The script will use
+# DATABASE_URL or POSTGRES_* env vars; docker-compose binds Postgres to localhost.
+npm --prefix packages/api run migrate
 
 echo "6) Start worker and API in background (logs -> /tmp)"
 npm --prefix packages/worker run dev &> /tmp/ci_worker.log &
