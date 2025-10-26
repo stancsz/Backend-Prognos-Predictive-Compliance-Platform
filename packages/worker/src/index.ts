@@ -7,6 +7,21 @@ import http from "http";
 
 const pipeline = promisify(stream.pipeline);
 
+/*
+  TODO (align -> AGENT/TODO.md & packages/worker/TODO.md)
+  - Worker responsibilities for MVP:
+    - Poll unprocessed evidence and download from S3
+    - Extract text (PDF/plain-text), compute checksum, deduplicate by checksum
+    - Provide simple rule-based control suggestion (keyword matching against framework controls)
+    - Persist extracted_text, checksum, status, indexed_at to Postgres or JSONL fallback
+    - Support idempotency and safe retries (use evidence id + checksum)
+    - Expose a dry-run mode and simple HTTP hooks for infra/demo-runner to observe progress
+  - Ensure worker updates these metadata fields used by API summarization:
+    - status, checksum, extracted_text, indexed_at
+  - Keep processing logic simple for MVP (rule-based suggestions), wire to packages/api/data/soc2.jsonl
+  - See packages/worker/TODO.md for implementation checklist and test expectations
+*/
+
 function log(level: string, message: string, meta?: any) {
   const entry = Object.assign({ ts: new Date().toISOString(), level, message }, meta || {});
   console.log(JSON.stringify(entry));

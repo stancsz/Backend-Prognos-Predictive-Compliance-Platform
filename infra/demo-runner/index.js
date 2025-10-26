@@ -61,13 +61,54 @@ async function main() {
   await client.connect();
 
   const start = Date.now();
-  while (Date.now() - start < TIMEOUT_MS) {
+  while (Date.now() - start <TIMEOUT_MS) {
     const res = await client.query('SELECT status, checksum, indexed_at FROM evidence WHERE id = $1', [uploadId]);
     if (res && res.rows && res.rows[0]) {
       const row = res.rows[0];
       console.log('Demo: row:', row);
       if (row.status === 'indexed') {
         console.log('Demo: SUCCESS - indexed', { checksum: row.checksum, indexed_at: row.indexed_at });
+
+        // After indexing, exercise mapping + summary endpoints to demonstrate the full demo flow:
+        try {
+          console.log('Demo: fetching frameworks from API...');
+          const fwRes = await fetch(`${API_URL}/frameworks`);
+          const fwJson = await fwRes.json();
+          console.log('Demo: frameworks:', fwJson.frameworks ? fwJson.frameworks.map(f => ({ id: f.id, name: f.name })) : fwJson);
+
+          const frameworkId = (fwJson.frameworks && fwJson.frameworks[0] && fwJson.frameworks[0].id) ? fwJson.frameworks[0].id : null;
+          if (frameworkId) {
+            console.log('Demo: fetching controls for framework', frameworkId);
+            const ctlRes = await fetch(`${API_URL}/frameworks/${frameworkId}/controls`);
+            const ctlJson = await ctlRes.json();
+            console.log('Demo: controls count', Array.isArray(ctlJson.controls) ? ctlJson.controls.length : 0);
+
+            // pick first control for mapping if available
+            const controlId = (Array.isArray(ctlJson.controls) && ctlJson.controls[0] && ctlJson.controls[0].id) ? ctlJson.controls[0].id : null;
+            if (controlId) {
+              console.log('Demo: posting mapping for evidence -> control', { evidenceId: uploadId, controlId });
+              const mapRes = await fetch(`${API_URL}/mappings`, {
+                method: 'POST',
+                body: JSON.stringify({ projectId: 'demo', evidenceId: uploadId, controlId, notes: 'demo mapping' }),
+                headers: { 'content-type': 'application/json', 'x-user-email': 'demo@local' }
+              });
+              const mapJson = await mapRes.json();
+              console.log('Demo: mapping response', mapJson);
+            } else {
+              console.warn('Demo: no control found to create mapping');
+            }
+          } else {
+            console.warn('Demo: no framework found to fetch controls from');
+          }
+
+          console.log('Demo: fetching project summary...');
+          const sumRes = await fetch(`${API_URL}/projects/demo/summary`);
+          const sumJson = await sumRes.json();
+          console.log('Demo: project summary:', sumJson);
+        } catch (apiErr) {
+          console.error('Demo: failed exercising mapping/summary endpoints', apiErr && apiErr.message ? apiErr.message : apiErr);
+        }
+
         await client.end();
         process.exit(0);
       }

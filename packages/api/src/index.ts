@@ -9,6 +9,232 @@ import { Client as PgClient } from "pg";
 const app = express();
 app.use(express.json());
 
+/*
+  Lightweight API scaffolding (implements read-only frameworks endpoints for the demo).
+  - Implements:
+    - GET /frameworks                -> list available frameworks (id, name, version, description)
+    - GET /frameworks/:id/controls   -> list controls for a given framework id
+  - Adds a permissive dev auth middleware that accepts X-DEV-TOKEN or X-USER-EMAIL headers
+  - Reads frameworks from packages/api/data/soc2.jsonl (one JSON object per line)
+  Notes:
+  - POST /mappings and /projects/:id/summary remain TODO (see packages/api/TODO.md).
+  - Keep behavior simple and idempotent for demo-runner automation.
+*/
+
+const FRAMEWORKS_FILE = path.join(__dirname, "../data/soc2.jsonl");
+
+// Dev-friendly auth middleware: attach a minimal `user` to req when X-DEV-TOKEN or X-USER-EMAIL is present.
+// Allows demo-runner to pass X-USER-EMAIL header and have a consistent actor for logs.
+app.use((req: any, _res: any, next: any) => {
+  const token = req.headers["x-dev-token"] || req.headers["x-user-email"];
+  if (!token) {
+    // allow anonymous access for demo but record a warning to surface missing headers in logs
+    console.warn("devAuth: no dev token provided; proceeding as anonymous");
+    req.user = null;
+  } else {
+    req.user = { id: String(token) };
+  }
+  next();
+});
+
+// Load frameworks from JSONL scaffold file. Returns an array of framework objects.
+function loadFrameworks() {
+  try {
+    if (!fs.existsSync(FRAMEWORKS_FILE)) return [];
+    const raw = fs.readFileSync(FRAMEWORKS_FILE, "utf8");
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    return lines.map((l) => JSON.parse(l));
+  } catch (e) {
+    console.error("failed to load frameworks:", e);
+    return [];
+  }
+}
+
+// GET /frameworks -> returns minimal framework metadata for demo consumption
+app.get("/frameworks", (_req, res) => {
+  const frameworks = loadFrameworks().map((f: any) => ({
+    id: f.id,
+    name: f.name,
+    version: f.version,
+    description: f.description
+  }));
+  res.json({ frameworks });
+});
+
+// GET /frameworks/:id/controls -> returns controls array for the requested framework id
+app.get("/frameworks/:id/controls", (req, res) => {
+  const id = String(req.params.id || "");
+  const frameworks = loadFrameworks();
+  const fw = frameworks.find((f: any) => f.id === id);
+  if (!fw) return res.status(404).json({ error: "framework_not_found" });
+  return res.json({ controls: fw.controls || [] });
+});
+
+// Simple mappings persistence (JSONL fallback). Stored at packages/api/data/mappings.jsonl
+const MAPPINGS_FILE = path.join(__dirname, "../data/mappings.jsonl");
+
+function persistMappingJsonl(obj: any) {
+  try {
+    fs.mkdirSync(path.dirname(MAPPINGS_FILE), { recursive: true });
+    fs.appendFileSync(MAPPINGS_FILE, JSON.stringify(obj) + "\n", { encoding: "utf8" });
+  } catch (e) {
+    console.error("persistMappingJsonl failed:", e);
+  }
+}
+
+// POST /mappings
+// Body: { projectId, evidenceId, controlId, notes? }
+// Returns: { mappingId, createdAt }
+app.post("/mappings", async (req: any, res) => {
+  try {
+    const { projectId, evidenceId, controlId, notes } = req.body || {};
+    if (!projectId || !evidenceId || !controlId) {
+      return res.status(400).json({ error: "projectId, evidenceId, controlId are required" });
+    }
+
+    const mapping = {
+      id: generateId(),
+      projectId,
+      evidenceId,
+      controlId,
+      notes: notes || null,
+      createdBy: req.user && req.user.id ? req.user.id : null,
+      createdAt: new Date().toISOString()
+    };
+
+    // Persist to Postgres if available (mappings table not created by migrations yet), otherwise JSONL
+    if (pg) {
+      try {
+        await pg.query(`
+          CREATE TABLE IF NOT EXISTS mappings (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            evidence_id TEXT NOT NULL,
+            control_id TEXT NOT NULL,
+            notes TEXT,
+            created_by TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+          );
+        `);
+        await pg.query(
+          `INSERT INTO mappings (id, project_id, evidence_id, control_id, notes, created_by, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [mapping.id, mapping.projectId, mapping.evidenceId, mapping.controlId, mapping.notes, mapping.createdBy, mapping.createdAt]
+        );
+      } catch (pgErr) {
+        console.error("persist mapping to pg failed, falling back to JSONL:", pgErr);
+        persistMappingJsonl(mapping);
+      }
+    } else {
+      persistMappingJsonl(mapping);
+    }
+
+    return res.json({ mappingId: mapping.id, createdAt: mapping.createdAt });
+  } catch (err: any) {
+    console.error("POST /mappings error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// GET /projects/:id/summary
+// Returns basic counts: totalEvidence, indexedEvidence, mappingsCount, controlsTotal, controlsCovered
+app.get("/projects/:id/summary", async (req, res) => {
+  const projectId = String(req.params.id || "");
+  if (!projectId) return res.status(400).json({ error: "project_id_required" });
+
+  try {
+    let totalEvidence = 0;
+    let indexedEvidence = 0;
+    let mappingsCount = 0;
+    // load controls total from framework(s) for this demo (SOC2 single framework)
+    const frameworks = loadFrameworks();
+    const controlsTotal = frameworks.reduce((acc: number, f: any) => acc + (Array.isArray(f.controls) ? f.controls.length : 0), 0);
+
+    // Evidence counts: prefer Postgres if available, otherwise read JSONL
+    if (pg) {
+      try {
+        const te = await pg.query("SELECT count(1) as c FROM evidence WHERE project_id = $1", [projectId]);
+        totalEvidence = parseInt(String(te.rows?.[0]?.c || "0"), 10);
+        const ie = await pg.query("SELECT count(1) as c FROM evidence WHERE project_id = $1 AND status = $2", [projectId, "indexed"]);
+        indexedEvidence = parseInt(String(ie.rows?.[0]?.c || "0"), 10);
+      } catch (e) {
+        console.warn("pg evidence counts failed:", e);
+        totalEvidence = 0;
+        indexedEvidence = 0;
+      }
+    } else {
+      try {
+        if (fs.existsSync(METADATA_FILE)) {
+          const raw = fs.readFileSync(METADATA_FILE, "utf8");
+          const lines = raw.split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
+          const projectRows = lines.filter((r: any) => r.projectId === projectId);
+          totalEvidence = projectRows.length;
+          indexedEvidence = projectRows.filter((r: any) => r.status === "indexed").length;
+        }
+      } catch (e) {
+        console.warn("evidence.jsonl read failed:", e);
+      }
+    }
+
+    // Mappings count: prefer Postgres, otherwise JSONL
+    if (pg) {
+      try {
+        const mq = await pg.query("SELECT count(1) as c FROM mappings WHERE project_id = $1", [projectId]);
+        mappingsCount = parseInt(String(mq.rows?.[0]?.c || "0"), 10);
+      } catch (e) {
+        console.warn("pg mappings count failed:", e);
+        mappingsCount = 0;
+      }
+    } else {
+      try {
+        if (fs.existsSync(MAPPINGS_FILE)) {
+          const raw = fs.readFileSync(MAPPINGS_FILE, "utf8");
+          const lines = raw.split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
+          mappingsCount = lines.filter((m: any) => m.projectId === projectId).length;
+        }
+      } catch (e) {
+        console.warn("mappings.jsonl read failed:", e);
+      }
+    }
+
+    // controlsCovered: unique controls mapped for this project (from mappings)
+    let controlsCovered = 0;
+    try {
+      let mappedControls: string[] = [];
+      if (pg) {
+        try {
+          const rc = await pg.query("SELECT DISTINCT control_id FROM mappings WHERE project_id = $1", [projectId]);
+          mappedControls = rc.rows.map((r: any) => r.control_id);
+        } catch (e) {
+          mappedControls = [];
+        }
+      } else {
+        if (fs.existsSync(MAPPINGS_FILE)) {
+          const raw = fs.readFileSync(MAPPINGS_FILE, "utf8");
+          const lines = raw.split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
+          mappedControls = lines.filter((m: any) => m.projectId === projectId).map((m: any) => m.controlId);
+        }
+      }
+      controlsCovered = Array.from(new Set(mappedControls)).length;
+    } catch (e) {
+      controlsCovered = 0;
+    }
+
+    return res.json({
+      projectId,
+      totalEvidence,
+      indexedEvidence,
+      mappingsCount,
+      controlsTotal,
+      controlsCovered,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.error("GET /projects/:id/summary error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 function log(level: string, message: string, meta?: any) {
   const entry = Object.assign({ ts: new Date().toISOString(), level, message }, meta || {});
   console.log(JSON.stringify(entry));

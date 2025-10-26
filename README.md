@@ -20,7 +20,7 @@ Work has drifted toward broad platform thinking. That work is valuable, but it c
 
 Demo & Proof-of-Concept (POC) requirements — must-have for MVP
 - A short interactive demo is required to validate product fit and to demonstrate the core flow to stakeholders.
-- A fully working POC is required: API, worker, DB, object storage, and a minimal client (web UI or CLI) that performs presign -> upload -> confirm indexing.
+- A fully working POC is required: API, worker, DB, object storage, and a minimal client (web UI or CLI) that performs presign -> upload -> confirm indexing -> map -> summary.
 - The entire POC (server + client + infra) must be runnable inside the provided Docker environment (infra/docker-compose.yml). Running `docker-compose up --build` (or the CI reproduction script) should start Postgres, MinIO, API, worker, and a simple demo client or demo runner service.
 - Acceptance criteria for demo/POC:
   - `docker-compose up --build` brings the environment up and the demo client can upload a sample file and show it indexed within the running UI or via the demo log output.
@@ -60,7 +60,7 @@ Acceptance criteria for the MVP
 - Worker is idempotent for duplicate uploads and has retry/backoff behavior that recovers from transient infra failures.
 - Migrations applied in CI automatically and deterministically.
 - PRs require passing pr-check gates and a completed PR template checklist.
-- Demo/POC runs via Docker Compose and demonstrates presign → upload → ingest → index.
+- Demo/POC runs via Docker Compose and demonstrates presign → upload → ingest → index → map → summary.
 
 Next actions (what I will do if instructed)
 - Update AGENT/AGENT.md with completed role playbooks and commit.
@@ -71,7 +71,7 @@ Next actions (what I will do if instructed)
 
 ## Running the demo locally (docker-compose)
 
-The repository includes a minimal automated demo runner that exercises the required presign → upload → ingest → index flow using real infra (Postgres + MinIO) and the API + worker services.
+The repository includes a minimal automated demo runner that exercises the required presign → upload → ingest → index flow using real infra (Postgres + MinIO) and the API + worker services. The demo-runner now also exercises the mapping and summary endpoints after evidence is indexed.
 
 Quick start
 1. Build and start the demo environment:
@@ -81,11 +81,12 @@ Quick start
    - MinIO (9000) + console (9001)
    - API server (4000)
    - Worker (background poller)
-   - demo-runner (one-shot container that performs presign → PUT → polls DB for indexing)
+   - demo-runner (one-shot container that performs presign → PUT → polls DB for indexing → mapping → summary)
 3. Demo runner behavior:
    - The demo-runner requests a presigned PUT URL from the API, uploads `sample.txt` (bundled from `packages/api/test/fixtures/sample.txt`), then polls Postgres for the evidence row to reach `status = indexed`.
+   - After indexing the demo-runner fetches frameworks and controls from the API, posts a mapping for the uploaded evidence to one control (POST /mappings), and then requests the project summary (GET /projects/demo/summary) to demonstrate end-to-end mapping coverage.
    - Timeout for indexing: ~2 minutes (configurable in `infra/demo-runner/index.js`).
-   - Exit codes: `0` = success (indexed), non-zero = failure (see container logs for details).
+   - Exit codes: `0` = success (indexed and mapping exercised), non-zero = failure (see container logs for details).
 4. Useful commands:
    - Tail all logs: `docker-compose -f infra/docker-compose.yml logs -f`
    - Tail demo-runner logs only: `docker-compose -f infra/docker-compose.yml logs -f demo-runner`
