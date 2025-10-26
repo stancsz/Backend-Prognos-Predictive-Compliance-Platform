@@ -1,87 +1,67 @@
-# Prognos — Backend (Predictive Compliance Platform)
+# Prognos — Backend + Frontend (monorepo)
 
-Status: WIP — Backend rebuild in progress
+This repository contains the Prognos frontend and its corresponding backend API. The backend API implementation that the frontend expects to talk to lives at `packages/api`. The frontend app is located at `Frontend-Prognos-Predictive-Compliance-Platform/`.
 
-This repository is intended to host the backend for the Frontend-Prognos application (see the `Frontend-Prognos-Predictive-Compliance-Platform/` folder). The current backend needs a full clean-up and rebuild to provide a stable, well-documented scaffold for frontend integration and future development.
+Use this README for a high-level orientation and quick commands to get the backend and its live integration tests running.
 
-## Goals
-- Remove/clean legacy and experimental code.
-- Scaffold a clean, well-documented backend API surface for the frontend.
-- Provide a reproducible local/dev environment (Docker + compose).
-- Add an OpenAPI/Swagger contract to drive frontend integration.
-- Implement CI basics, tests, and developer guidance.
+## Layout (important)
+- Backend API: `packages/api/` — this is the server the frontend calls (endpoints: `/health`, `/ready`, `/uploads`, `/mappings`, `/projects/{id}/summary`, etc.)
+- Frontend app: `Frontend-Prognos-Predictive-Compliance-Platform/`
+- Infra & docker-compose: `infra/docker-compose.yml` — brings up Postgres, MinIO, API, worker, demo-runner
+- Tests: `packages/api/test/` (unit, integration, and live integration tests)
+- Local infra helpers: `scripts/test-infra-up.sh`, `scripts/test-infra-down.sh`
 
-## Proposed tech stack (suggested)
-- Language: TypeScript (Node.js)
-- Web framework: Express / Fastify (TypeScript-first)
-- Database: PostgreSQL (migrations via Knex/TypeORM/Prisma)
-- Object store: MinIO (s3-compatible) — already used in infra
-- Queue/worker: Redis / Bull or existing worker package
-- Containerization: Docker + docker-compose (infra/)
-- Testing: Jest / Supertest (API E2E)
-- API spec: OpenAPI 3.0 (yaml) at packages/api/openapi.yaml
+## Quickstart — backend (local)
+1. From repo root install dependencies:
+   - npm ci
 
-## Repository layout (current)
-- packages/api — API implementation (TypeScript)
-- packages/worker — background job code
-- packages/web — example frontend (legacy)
-- infra — docker compose, Dockerfiles, infra scripts
-- Frontend-Prognos-Predictive-Compliance-Platform — actual frontend app
-- docs — architecture notes, ERD, backlog, etc.
+2. Install only for API (if working inside `packages/api`):
+   - npm ci --prefix packages/api
 
-## Immediate next steps (scaffold & cleanup)
-1. Audit and remove legacy files that won't be part of the new backend.
-2. Define API surface via OpenAPI and store spec in `packages/api/`.
-3. Create a minimal TypeScript backend scaffold (routes, auth stub, healthcheck, docs).
-4. Add docker-compose service for the API (connected to infra/docker-compose.yml).
-5. Wire CI to run lint, typecheck, and tests.
-6. Add README sections inside `packages/api/` describing local dev steps and API endpoints.
+3. Run backend in development:
+   - npm --prefix packages/api run dev
+   - Default port: 4000
 
-## Getting started (developer)
-1. Review infra/docker-compose.yml — it contains the database and MinIO services.
-2. Add/maintain an OpenAPI spec at `packages/api/openapi.yaml`.
-3. Create a minimal server in `packages/api/src/`:
-   - health endpoint: `GET /health`
-   - API root: `GET /api` (serves OpenAPI UI)
-   - auth stub and example endpoints to match frontend needs.
-4. Provide a local start: `docker-compose up` (api, db, minio) and `npm run dev` for local hot-reload (to be implemented in packages/api).
+4. Build and run via Docker Compose (recommended for integration with Postgres + MinIO):
+   - ./scripts/test-infra-up.sh
+   - npm --prefix packages/api run test:integration:live
+   - ./scripts/test-infra-down.sh
 
-Example (once scaffolded):
-```bash
-# from repo root
-cd packages/api
-npm install
-npm run dev
-# or
-docker-compose -f infra/docker-compose.yml up --build
-```
+Notes:
+- `scripts/test-infra-up.sh` will bring up `infra/docker-compose.yml` and wait for API + MinIO readiness.
+- If Docker is not available locally, CI includes an `integration-live` job that runs the same docker-compose stack on GitHub Actions.
 
-## Frontend integration
-- The frontend lives in `Frontend-Prognos-Predictive-Compliance-Platform/`. Use the OpenAPI spec to generate client types or mock servers for the frontend.
-- Keep the API contract stable: changes to the spec must be reviewed and versioned.
+## Running live integration tests (Postgres + MinIO)
+Prerequisites:
+- Docker Desktop / Docker Engine running locally.
+- Ports 4000, 5432, 9000 available on localhost.
+- From repo root: `npm ci`
 
-## Docs & artifacts
-- Keep architecture and decisions in `docs/` (ERD, sequence diagrams, MVP checklists).
-- Add migration scripts to `infra/migrations/` and document usage.
+Local steps:
+1. Bring up infra
+   - ./scripts/test-infra-up.sh
+2. Run live tests
+   - npm --prefix packages/api run test:integration:live
+3. Teardown
+   - ./scripts/test-infra-down.sh
 
-## Contribution & Ownership
-- Use PRs for changes. Include issue/PR templates where appropriate.
-- Maintain clear CHANGELOG and versioning for API changes.
+Environment variables (optional)
+- You can bypass local docker by pointing the API tests at remote services via:
+  - DATABASE_URL
+  - AWS_ENDPOINT
+  - AWS_ACCESS_KEY_ID
+  - AWS_SECRET_ACCESS_KEY
+  - S3_BUCKET
 
-## Roadmap / TODO
-- [ ] Audit and remove legacy backend code
-- [ ] Create `packages/api/openapi.yaml` (OpenAPI spec)
-- [ ] Scaffold minimal TypeScript API (health, docs, example endpoints)
-- [ ] Add docker-compose service for the API and document local run
-- [ ] Add CI for lint, typecheck, tests
-- [ ] Implement basic integration tests (packages/api/test/)
-- [ ] Document developer onboarding and API contract
-- [ ] Coordinate with frontend team to validate the scaffold
+## CI
+A GitHub Actions job `integration-live` is included in `.github/workflows/ci.yml`. It brings up the docker-compose stack, waits for readiness, runs the live tests, and tears down the stack.
 
-## Contacts
-- Repo owner: see git history / committers
-- For architecture decisions: maintainers listed in `docs/TECH_LEAD.md`
+## Contributing / Next steps
+- If you are working on the frontend, use `packages/api` as the API server reference.
+- When adding DB schema changes, prefer migrations under `infra/migrations/` and ensure test setup runs migrations.
+- If you add tests that create S3 objects or DB rows, make them idempotent and clean up after themselves.
 
----
-
-This README is intentionally concise — more detailed developer guides, API specs, and setup docs should be added under `packages/api/` and `docs/` as the rebuild proceeds.
+## Contact / References
+- Backend code: `packages/api/src/`
+- API OpenAPI spec placeholder: `packages/api/openapi.yaml`
+- Tech backlog: `packages/api/TECH_LEAD_BACKLOG.md`
