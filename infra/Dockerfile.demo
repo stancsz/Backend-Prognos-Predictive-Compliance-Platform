@@ -1,0 +1,16 @@
+FROM node:18-alpine
+WORKDIR /app
+
+# Install runtime deps
+COPY infra/demo-runner/package.json ./
+RUN npm install --production
+
+# Copy demo runner code and sample fixture
+COPY infra/demo-runner/index.js ./
+COPY packages/api/test/fixtures/sample.txt ./sample.txt
+
+ENV API_URL=http://api:4000
+ENV DATABASE_URL=postgres://devuser:devpass@postgres:5432/plts_dev
+ENV NODE_ENV=production
+
+CMD ["node", "index.js"]

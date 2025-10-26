@@ -69,5 +69,34 @@ Next actions (what I will do if instructed)
 - Add a minimal demo client and wire it into infra/docker-compose.yml so the demo runs with `docker-compose up --build`.
 - Iterate on README and docs to reflect progress and milestones.
 
+## Running the demo locally (docker-compose)
+
+The repository includes a minimal automated demo runner that exercises the required presign → upload → ingest → index flow using real infra (Postgres + MinIO) and the API + worker services.
+
+Quick start
+1. Build and start the demo environment:
+   - `docker-compose -f infra/docker-compose.yml up --build`
+2. What runs:
+   - Postgres (5432)
+   - MinIO (9000) + console (9001)
+   - API server (4000)
+   - Worker (background poller)
+   - demo-runner (one-shot container that performs presign → PUT → polls DB for indexing)
+3. Demo runner behavior:
+   - The demo-runner requests a presigned PUT URL from the API, uploads `sample.txt` (bundled from `packages/api/test/fixtures/sample.txt`), then polls Postgres for the evidence row to reach `status = indexed`.
+   - Timeout for indexing: ~2 minutes (configurable in `infra/demo-runner/index.js`).
+   - Exit codes: `0` = success (indexed), non-zero = failure (see container logs for details).
+4. Useful commands:
+   - Tail all logs: `docker-compose -f infra/docker-compose.yml logs -f`
+   - Tail demo-runner logs only: `docker-compose -f infra/docker-compose.yml logs -f demo-runner`
+   - Re-run demo-runner (after services are up): `docker-compose -f infra/docker-compose.yml run --rm demo-runner`
+   - Inspect recent evidence rows: `node infra/query_evidence_runner.js` (connects to the configured DATABASE_URL)
+5. Troubleshooting:
+   - Ensure Docker and docker-compose are installed and running.
+   - Confirm ports 4000, 9000, and 5432 are free or adjust port mappings in `infra/docker-compose.yml`.
+   - If demo-runner times out, check API and worker logs to ensure the worker is connected to the same DATABASE_URL and S3 endpoint (MinIO).
+   - To inspect MinIO, open the web console at `http://localhost:9001` (credentials: `minioadmin` / `minioadmin`).
+   - To view database rows directly, use Adminer at `http://localhost:8080` or `psql` against `postgres://devuser:devpass@localhost:5432/plts_dev`.
+
 Contact / notes
 - Treat this repository as the canonical MVP — keep scope narrow and production-quality. AI and data-driven features belong in Phase 2 once the MVP slice is stable and instrumented.

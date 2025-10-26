@@ -1,0 +1,24 @@
+FROM node:18-alpine AS builder
+WORKDIR /app
+
+# Install deps and build
+COPY packages/api/package.json packages/api/package-lock.json* ./
+RUN npm ci
+
+# Copy source and build
+COPY packages/api ./
+RUN npm run build
+
+# Runtime image
+FROM node:18-alpine
+WORKDIR /app
+
+# Copy production files
+COPY --from=builder /app/package.json /app/package-lock.json* ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY packages/api/data ./data
+
+ENV PORT=4000
+EXPOSE 4000
+CMD ["node", "dist/index.js"]

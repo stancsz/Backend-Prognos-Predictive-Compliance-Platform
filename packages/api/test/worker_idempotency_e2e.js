@@ -79,18 +79,22 @@ async function waitForIndexed(client, objectKey, timeoutMs = 60_000) {
   const client = new Client({ connectionString: CLEAN_DATABASE_URL });
   await client.connect();
   try {
-    console.log('1) Presign & upload - first upload');
-    const p1 = await presignUpload('sample.txt');
-    await putObject(p1.url, PAYLOAD_PATH);
-    console.log('first upload PUT complete, waiting for worker to index...');
-    const firstIndexed = await waitForIndexed(client, p1.objectKey, 60000);
-    console.log('first indexed:', firstIndexed);
+    console.log('1) Presign & concurrent upload - two uploads of same content started in parallel');
 
-    console.log('2) Presign & upload - second upload (same content)');
-    const p2 = await presignUpload('sample.txt');
-    await putObject(p2.url, PAYLOAD_PATH);
-    console.log('second upload PUT complete, waiting for worker to index...');
-    const secondIndexed = await waitForIndexed(client, p2.objectKey, 60000);
+    // Create presign URLs for two uploads
+    const [p1, p2] = await Promise.all([presignUpload('sample.txt'), presignUpload('sample.txt')]);
+
+    // Start both PUTs concurrently to exercise worker concurrency/idempotency
+    await Promise.all([putObject(p1.url, PAYLOAD_PATH), putObject(p2.url, PAYLOAD_PATH)]);
+    console.log('Both PUTs complete, waiting for worker to index both...');
+
+    // Wait for both objectKeys to be indexed (with individual timeouts)
+    const [firstIndexed, secondIndexed] = await Promise.all([
+      waitForIndexed(client, p1.objectKey, 60000),
+      waitForIndexed(client, p2.objectKey, 60000),
+    ]);
+
+    console.log('first indexed:', firstIndexed);
     console.log('second indexed:', secondIndexed);
 
     if (!firstIndexed.checksum || !secondIndexed.checksum) {
@@ -100,9 +104,14 @@ async function waitForIndexed(client, objectKey, timeoutMs = 60_000) {
       throw new Error(`Checksum mismatch: ${firstIndexed.checksum} !== ${secondIndexed.checksum}`);
     }
 
-    console.log('SUCCESS: both uploads indexed with identical checksum (worker deterministic).');
-    // Print the two evidence rows for diagnostics
-    const rows = await getEvidenceRows(client, 10);
+    // Additionally validate that indexed rows are present and that checksums match across recent rows
+    const rows = await getEvidenceRows(client, 20);
+    const matching = rows.filter(r => r.checksum === firstIndexed.checksum);
+    if (matching.length < 2) {
+      console.warn('Warning: fewer than 2 evidence rows share the same checksum; inspect recent rows for dedupe behavior.');
+    }
+
+    console.log('SUCCESS: concurrent uploads indexed with identical checksum (worker deterministic).');
     console.log('Recent evidence rows (for debug):');
     rows.forEach((r) => console.log(JSON.stringify(r)));
 
@@ -111,7 +120,7 @@ async function waitForIndexed(client, objectKey, timeoutMs = 60_000) {
     console.error('E2E failed:', err && err.message ? err.message : err);
     // Dump latest evidence rows for investigation
     try {
-      const rows = await getEvidenceRows(client, 20);
+      const rows = await getEvidenceRows(client, 50);
       console.error('Recent evidence rows:');
       rows.forEach((r) => console.error(JSON.stringify(r)));
     } catch (e) {
