@@ -74,6 +74,18 @@ jobs:
             exit 1
           fi
 
+      - name: Run sanitizeEnv unit tests
+        run: |
+          node infra/tests/run_sanitize_env_test.js
+
+      - name: Write env hex dumps (for validator and forensics)
+        run: |
+          node infra/scripts/write_env_hex.js
+
+      - name: Validate env hex dumps (fail-fast on invisible/control bytes)
+        run: |
+          node infra/tests/validate_env_hex.js
+
       - name: Start worker (background)
         run: |
           npm --prefix packages/worker run dev &> /tmp/worker.log &
