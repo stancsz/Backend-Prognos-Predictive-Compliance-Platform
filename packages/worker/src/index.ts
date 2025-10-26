@@ -265,10 +265,49 @@ async function mainLoop() {
   }
 }
 
+// Lightweight health/readiness HTTP server for local dev and CI readiness checks.
+// Exposes:
+// - GET /health  -> basic liveness { status: 'ok' }
+// - GET /ready   -> readiness with DB connectivity and lastIndexedAt
+const server = http.createServer((req, res) => {
+  if (req.url === "/health") {
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+
+  if (req.url === "/ready") {
+    (async () => {
+      let dbOk = false;
+      try {
+        if (pg) {
+          await pg.query("SELECT 1");
+          dbOk = true;
+        }
+      } catch (e) {
+        dbOk = false;
+      }
+
+      const ready = dbOk;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ready, db: dbOk, lastIndexedAt }));
+    })();
+    return;
+  }
+
+  res.statusCode = 404;
+  res.end("not found");
+});
+
+server.listen(WORKER_PORT, () => {
+  console.log("Worker: health server listening on", WORKER_PORT);
+});
+
 process.on("SIGINT", async () => {
   console.log("Worker: SIGINT received, shutting down");
   running = false;
   try { await pg?.end(); } catch (e) { /* ignore */ }
+  try { server.close(); } catch (e) { /* ignore */ }
   process.exit(0);
 });
 
@@ -276,10 +315,12 @@ process.on("SIGTERM", async () => {
   console.log("Worker: SIGTERM received, shutting down");
   running = false;
   try { await pg?.end(); } catch (e) { /* ignore */ }
+  try { server.close(); } catch (e) { /* ignore */ }
   process.exit(0);
 });
 
 mainLoop().catch((e) => {
   console.error("Worker: fatal error:", e);
+  try { server.close(); } catch (_) {}
   process.exit(1);
 });
