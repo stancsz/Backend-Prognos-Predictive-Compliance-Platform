@@ -1,4 +1,4 @@
-﻿import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Client as PgClient } from "pg";
 import crypto from "crypto";
 import stream from "stream";
@@ -12,40 +12,81 @@ function log(level: string, message: string, meta?: any) {
   console.log(JSON.stringify(entry));
 }
 
-const S3_BUCKET = process.env.S3_BUCKET || "local-minio-bucket";
-const REGION = process.env.AWS_REGION || "us-west-2";
-const POLL_INTERVAL_MS = parseInt(process.env.WORKER_POLL_MS || "5000", 10);
-const BATCH_SIZE = parseInt(process.env.WORKER_BATCH_SIZE || "5", 10);
-const WORKER_PORT = parseInt(process.env.WORKER_PORT || "4001", 10);
+ // Robust sanitizer: remove Unicode separators and control chars, strip BOM/NBSP/zero-width, then trim ASCII whitespace.
+ function sanitizeEnv(value: any): string {
+   if (value == null) return "";
+   const s = String(value);
+   const removeRe = /[\p{Z}\p{C}]+/gu;
+   let cleaned = s.replace(removeRe, "");
+   // Finally remove any remaining ASCII whitespace at ends (space, tab, CR, LF).
+   cleaned = cleaned.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+   return cleaned;
+ }
+
+ // Sanitize all process.env early to guard against wrapper-injected invisible/trailing bytes.
+ Object.keys(process.env).forEach((k) => {
+   try {
+     process.env[k] = sanitizeEnv(process.env[k]);
+   } catch (e) {
+     console.error('env sanitize failed for', k, e);
+   }
+ });
+
+const S3_BUCKET = sanitizeEnv(process.env.S3_BUCKET || "local-minio-bucket");
+const REGION = (process.env.AWS_REGION || "us-west-2").toString().trim();
+const POLL_INTERVAL_MS = parseInt((process.env.WORKER_POLL_MS || "5000").toString().trim(), 10);
+const BATCH_SIZE = parseInt((process.env.WORKER_BATCH_SIZE || "5").toString().trim(), 10);
+const WORKER_PORT = parseInt((process.env.WORKER_PORT || "4001").toString().trim(), 10);
+
+const AWS_ENDPOINT = (process.env.AWS_ENDPOINT || "").toString().trim();
+const AWS_ACCESS_KEY_ID = (process.env.AWS_ACCESS_KEY_ID || "").toString().trim();
+const AWS_SECRET_ACCESS_KEY = (process.env.AWS_SECRET_ACCESS_KEY || "").toString().trim();
 let lastIndexedAt: string | null = null;
 
 let pg: PgClient | null = null;
 
 async function initPostgres() {
-  const DATABASE_URL = process.env.DATABASE_URL || "";
+  const DATABASE_URL = (process.env.DATABASE_URL || process.env.FORCE_DB_URL || "").toString().trim();
   if (!DATABASE_URL) {
     console.warn("No DATABASE_URL provided - worker will not run DB tasks.");
     return;
   }
+
+  // Redact password for safe logging (avoid leaking secrets)
+  function redactDatabaseUrl(u: string) {
+    try {
+      const m = u.match(/^(.*:\/\/)([^:@]+)(:([^@]+))?(@.*)$/);
+      if (!m) return u;
+      const prefix = m[1];
+      const user = m[2];
+      const hasPass = !!m[4];
+      const suffix = m[5];
+      return hasPass ? `${prefix}${user}:*****${suffix}` : `${prefix}${user}${suffix}`;
+    } catch (e) {
+      return u;
+    }
+  }
+
+  console.log("Worker: resolved DATABASE_URL=", redactDatabaseUrl(DATABASE_URL));
   pg = new PgClient({ connectionString: DATABASE_URL });
   await pg.connect();
   console.log("Worker: connected to Postgres");
 }
 
 function s3Client() {
-  const s3Credentials = (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ? {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-  } : (process.env.AWS_ENDPOINT ? {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "minioadmin",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "minioadmin"
+  const s3Credentials = (AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) ? {
+    accessKeyId: AWS_ACCESS_KEY_ID,
+    secretAccessKey: AWS_SECRET_ACCESS_KEY
+  } : (AWS_ENDPOINT ? {
+    accessKeyId: AWS_ACCESS_KEY_ID || "minioadmin",
+    secretAccessKey: AWS_SECRET_ACCESS_KEY || "minioadmin"
   } : undefined);
 
   return new S3Client({
     region: REGION,
-    endpoint: process.env.AWS_ENDPOINT || undefined,
+    endpoint: AWS_ENDPOINT || undefined,
     credentials: s3Credentials as any,
-    forcePathStyle: !!process.env.AWS_ENDPOINT,
+    forcePathStyle: !!AWS_ENDPOINT,
     maxAttempts: 3
   });
 }
