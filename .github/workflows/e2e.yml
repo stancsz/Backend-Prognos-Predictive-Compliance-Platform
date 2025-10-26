@@ -52,14 +52,7 @@ jobs:
           echo "MinIO did not start in time" >&2
           exit 1
 
-      - name: Install package dependencies
-        run: |
-          npm install --prefix packages/api
-          npm install --prefix packages/worker
-
       - name: Ensure MinIO bucket and apply DB migration
-        env:
-          POSTGRES_CONTAINER: ${{ steps.get_postgres_container.outputs.name || '' }}
         run: |
           # Ensure bucket (script should handle idempotency)
           node packages/api/scripts/create_minio_bucket.js || echo "create_minio_bucket.js returned non-zero (continuing)"
@@ -86,43 +79,17 @@ jobs:
         run: |
           node infra/tests/validate_env_hex.js
 
-      - name: Start worker (background)
+      - name: Run docker-compose demo-runner (presign -> upload -> index)
         run: |
-          npm --prefix packages/worker run dev &> /tmp/worker.log &
-          sleep 1
-
-      - name: Start API (background)
-        run: |
-          npm --prefix packages/api run dev &> /tmp/api.log &
-          sleep 1
-
-      - name: Wait for API to be ready
-        run: |
-          for i in {1..30}; do
-            if curl -sS http://localhost:3000/ >/dev/null 2>&1 || curl -sS http://localhost:3000/uploads >/dev/null 2>&1; then
-              echo "API is responding"
-              exit 0
-            fi
-            echo "Waiting for API..."
-            sleep 2
-          done
-          echo "API did not start in time" >&2
-          echo "==== API LOG ===="
-          sed -n '1,200p' /tmp/api.log || true
-          exit 1
-
-      - name: Run E2E upload test
-        run: |
-          set -o pipefail
-          node packages/api/test/upload_e2e.js
+          # demo-runner is a one-shot service that requests a presigned PUT URL, uploads the bundled sample,
+          # and polls Postgres for the evidence row to reach status = "indexed".
+          docker-compose -f infra/docker-compose.yml run --rm demo-runner
 
       - name: Upload debug logs (on failure)
         if: failure()
         run: |
-          echo "=== API LOG ==="
-          sed -n '1,500p' /tmp/api.log || true
-          echo "=== WORKER LOG ==="
-          sed -n '1,500p' /tmp/worker.log || true
+          docker-compose -f infra/docker-compose.yml logs --no-color > e2e-logs.txt || true
+          cat e2e-logs.txt || true
 
       - name: Tear down infra
         if: always()
