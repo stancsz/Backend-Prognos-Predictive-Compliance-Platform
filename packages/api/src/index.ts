@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import { S3Client, PutObjectCommand, CreateBucketCommand, HeadBucketCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
@@ -14,14 +14,61 @@ function log(level: string, message: string, meta?: any) {
   console.log(JSON.stringify(entry));
 }
 
-const S3_BUCKET = process.env.S3_BUCKET || "local-minio-bucket";
-const REGION = process.env.AWS_REGION || "us-west-2";
+function hexDump(s: string | undefined) {
+  try {
+    return Buffer.from((s || "")).toString("hex");
+  } catch (e) {
+    return "";
+  }
+}
+
+ // Robust sanitizer: remove Unicode separators and control chars, strip BOM/NBSP/zero-width, then trim ASCII whitespace.
+ // This handles NBSP, BOM, zero-width spaces, and other invisible bytes that String.prototype.trim() may not remove.
+ function sanitizeEnv(value: any): string {
+   if (value == null) return "";
+   const s = String(value);
+   // Explicitly remove common invisible characters (BOM, NBSP, zero-widths) plus any Unicode separators / control chars.
+   // Keep the `u` flag so \p classes work.
+   const removeRe = /[\uFEFF\u00A0\u200B\u200C\u200D\u2060\p{Z}\p{C}]+/gu;
+   let cleaned = s.replace(removeRe, "");
+   // Finally remove any remaining ASCII whitespace at ends (space, tab, CR, LF).
+// Finally remove any remaining ASCII whitespace at ends (space, tab, CR, LF).
+  cleaned = cleaned.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+  return cleaned;
+}
+
+ // Sanitize all process.env early to guard against wrapper-injected invisible/trailing bytes.
+ Object.keys(process.env).forEach((k) => {
+   try {
+     process.env[k] = sanitizeEnv(process.env[k]);
+   } catch (e) {
+     console.error('env sanitize failed for', k, e);
+   }
+ });
+
+const S3_BUCKET = sanitizeEnv(process.env.S3_BUCKET || "local-minio-bucket");
+const REGION = sanitizeEnv(process.env.AWS_REGION || "us-west-2");
 const METADATA_FILE = path.join(__dirname, "../data/evidence.jsonl");
+
+ // Sanitize AWS / Postgres envs early to avoid trailing-space/newline issues
+const AWS_ENDPOINT = sanitizeEnv(process.env.AWS_ENDPOINT || "");
+const AWS_ACCESS_KEY_ID = sanitizeEnv(process.env.AWS_ACCESS_KEY_ID || "");
+const AWS_SECRET_ACCESS_KEY = sanitizeEnv(process.env.AWS_SECRET_ACCESS_KEY || "");
 
 // Postgres client (optional). If DATABASE_URL is set, we persist metadata to Postgres.
 // If not set, we fall back to append-only JSONL file (existing PoC).
 let pg: PgClient | null = null;
-const DATABASE_URL = process.env.DATABASE_URL || "";
+const DATABASE_URL = (function() {
+  const force = sanitizeEnv(process.env.FORCE_DB_URL || "");
+  if (force) return force;
+  return sanitizeEnv(process.env.DATABASE_URL || "");
+})();
+
+// STARTUP DEBUG: hex dumps to detect invisible whitespace/newlines in env values
+console.log("STARTUP DEBUG: S3_BUCKET hex:", hexDump(S3_BUCKET));
+console.log("STARTUP DEBUG: DATABASE_URL hex:", hexDump(DATABASE_URL));
+console.log("STARTUP DEBUG: S3_BUCKET raw:", JSON.stringify(S3_BUCKET));
+console.log("STARTUP DEBUG: DATABASE_URL raw:", JSON.stringify(DATABASE_URL));
 
 async function initPostgres() {
   if (!DATABASE_URL) return;
@@ -92,26 +139,26 @@ function generateId(): string {
 }
 
 // s3 client (uses environment credentials or local endpoint via AWS_ENDPOINT)
-const s3Credentials = (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ? {
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-} : (process.env.AWS_ENDPOINT ? {
+const s3Credentials = (AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) ? {
+  accessKeyId: AWS_ACCESS_KEY_ID,
+  secretAccessKey: AWS_SECRET_ACCESS_KEY
+} : (AWS_ENDPOINT ? {
   // default local MinIO dev creds (override via env in real setups)
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'minioadmin',
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'minioadmin'
+  accessKeyId: AWS_ACCESS_KEY_ID || 'minioadmin',
+  secretAccessKey: AWS_SECRET_ACCESS_KEY || 'minioadmin'
 } : undefined);
 
 const s3 = new S3Client({
   region: REGION,
-  endpoint: process.env.AWS_ENDPOINT, // optional (for MinIO/dev)
+  endpoint: AWS_ENDPOINT || undefined, // optional (for MinIO/dev)
   credentials: s3Credentials as any,
-  forcePathStyle: !!process.env.AWS_ENDPOINT,
+  forcePathStyle: !!AWS_ENDPOINT,
   maxAttempts: 3
 });
 
 async function ensureBucket() {
   // Only attempt to manage buckets in local/dev S3 (AWS_ENDPOINT) or when explicitly permitted.
-  if (!process.env.AWS_ENDPOINT) {
+  if (!AWS_ENDPOINT) {
     return;
   }
 
@@ -188,7 +235,7 @@ app.get("/ready", async (_req, res) => {
   const dbOk = !!pg;
   let s3Ok = true;
   try {
-    if (process.env.AWS_ENDPOINT) {
+    if (AWS_ENDPOINT) {
       await s3.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
     }
   } catch (err) {

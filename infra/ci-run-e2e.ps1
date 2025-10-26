@@ -30,13 +30,13 @@ Write-Host "1) Start infra (Postgres + MinIO) via docker-compose"
 docker-compose -f infra/docker-compose.yml up -d --build
 
 Write-Host "2) Wait for services"
-if (-not (Wait-ForPort -Host 'localhost' -Port 5432 -Attempts 30)) {
+if (-not (Wait-ForPort -Hostname 'localhost' -Port 5432 -Attempts 30)) {
   Write-Error "Postgres did not start in time"
   docker-compose -f infra/docker-compose.yml logs
   Pop-Location
   exit 1
 }
-if (-not (Wait-ForPort -Host 'localhost' -Port 9000 -Attempts 30)) {
+if (-not (Wait-ForPort -Hostname 'localhost' -Port 9000 -Attempts 30)) {
   Write-Error "MinIO did not start in time"
   docker-compose -f infra/docker-compose.yml logs
   Pop-Location

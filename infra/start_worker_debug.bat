@@ -9,7 +9,8 @@ set "S3_BUCKET=local-minio-bucket"
 
 node infra\scripts\write_env_hex.js
 
-REM Run worker in foreground so logs appear in the started cmd window.
-npm --prefix packages/worker run dev
+REM Run worker in foreground using deterministic dev:debug script (avoids ts-node-dev respawn).
+REM Redirect stdout/stderr to %TEMP% so we can tail logs from other shells.
+npm --prefix packages/worker run dev:debug > "%TEMP%\ci_worker.log" 2> "%TEMP%\ci_worker_err.log"
 
 endlocal

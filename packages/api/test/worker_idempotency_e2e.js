@@ -18,7 +18,19 @@ const fs = require('fs');
 const path = require('path');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3000';
-const DATABASE_URL = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/postgres';
+
+// Prefer FORCE_DB_URL, otherwise fall back to the known local-dev Postgres (devuser/devpass/plts_dev).
+// This avoids relying on possibly-corrupted global envs that were observed during Windows runs.
+const CLEAN_DATABASE_URL = (process.env.FORCE_DB_URL && typeof process.env.FORCE_DB_URL === 'string' && process.env.FORCE_DB_URL.trim())
+  ? process.env.FORCE_DB_URL.trim()
+  : 'postgres://devuser:devpass@localhost:5432/plts_dev';
+
+// Diagnostic: print the resolved DB URL (trimmed)
+function hexDump(s) { try { return Buffer.from(s || '').toString('hex').slice(0, 200); } catch (e) { return ''; } }
+console.log('TEST DEBUG: resolved DATABASE_URL=', CLEAN_DATABASE_URL);
+if (CLEAN_DATABASE_URL.match(/\s/)) {
+  console.error('TEST DEBUG: DATABASE_URL contains whitespace characters; hex:', hexDump(CLEAN_DATABASE_URL));
+}
 const S3_BUCKET = process.env.S3_BUCKET || 'test-bucket';
 const PAYLOAD_PATH = path.resolve(__dirname, 'fixtures', 'sample.txt');
 
@@ -34,7 +46,8 @@ async function presignUpload(filename = 'sample.txt') {
   const res = await fetch(`${API_BASE}/uploads`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ filename }),
+    // include projectId required by the API
+    body: JSON.stringify({ filename, projectId: 'e2e-project' }),
   });
   if (!res.ok) throw new Error(`presign failed: ${res.status} ${await res.text()}`);
   return res.json(); // { uploadId, objectKey, url }
@@ -63,7 +76,7 @@ async function waitForIndexed(client, objectKey, timeoutMs = 60_000) {
 }
 
 (async function main() {
-  const client = new Client({ connectionString: DATABASE_URL });
+  const client = new Client({ connectionString: CLEAN_DATABASE_URL });
   await client.connect();
   try {
     console.log('1) Presign & upload - first upload');

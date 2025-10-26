@@ -3,17 +3,25 @@ const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const databaseUrl =
-  process.env.DATABASE_URL ||
-  process.env.POSTGRES_URL ||
-  (() => {
-    const host = process.env.POSTGRES_HOST || 'localhost';
-    const port = process.env.POSTGRES_PORT || '5432';
-    const user = process.env.POSTGRES_USER || 'postgres';
-    const password = process.env.POSTGRES_PASSWORD || '';
-    const db = process.env.POSTGRES_DB || 'postgres';
-    return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${db}`;
-  })();
+const databaseUrl = (() => {
+  // Allow a forced override (useful in CI / Windows shells)
+  if (process.env.FORCE_DB_URL && typeof process.env.FORCE_DB_URL === 'string' && process.env.FORCE_DB_URL.trim()) {
+    return process.env.FORCE_DB_URL.trim();
+  }
+
+  // Prefer explicit DB URL envs, trimming stray whitespace/newlines
+  const envUrl = (process.env.DATABASE_URL || process.env.POSTGRES_URL || '').toString().trim();
+  if (envUrl) return envUrl;
+
+  // Build URL from individual POSTGRES_* vars, trimming each to avoid malformed values
+  const host = (process.env.POSTGRES_HOST || 'localhost').toString().trim();
+  const port = (process.env.POSTGRES_PORT || '5432').toString().trim();
+  const user = (process.env.POSTGRES_USER || 'postgres').toString().trim();
+  const password = (process.env.POSTGRES_PASSWORD || '').toString().trim();
+  const db = (process.env.POSTGRES_DB || 'postgres').toString().trim();
+
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+})();
 
 (async () => {
   try {

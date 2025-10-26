@@ -1,4 +1,4 @@
-﻿# Compliance Legal Tech SaaS — Developer README
+# Compliance Legal Tech SaaS — Developer README
 
 Overview
 This repository implements a minimal ingestion pipeline for evidence files:

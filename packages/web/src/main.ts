@@ -1,1 +1,1 @@
-﻿console.log("Web scaffold - implement UI");
+console.log("Web scaffold - implement UI");
