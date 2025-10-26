@@ -376,6 +376,36 @@ export function createApp(resources?: Partial<Resources>) {
     }
   });
 
+  // Serve OpenAPI YAML spec
+  app.get("/api/openapi.yaml", (_req, res) => {
+    res.type("application/yaml");
+    res.sendFile(path.join(__dirname, "../openapi.yaml"));
+  });
+
+  // Minimal Swagger UI page (uses swagger-ui-dist CDN). This avoids adding new runtime deps.
+  app.get("/api/docs", (_req, res) => {
+    const specUrl = "/api/openapi.yaml";
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Prognos API — Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = function() {
+      SwaggerUIBundle({ url: '${specUrl}', dom_id: '#swagger-ui' });
+    };
+  </script>
+</body>
+</html>`;
+    res.type("text/html").send(html);
+  });
+
   return app;
 }
 
