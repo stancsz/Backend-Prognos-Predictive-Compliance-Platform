@@ -214,7 +214,24 @@ async function processBatch() {
     try {
       const buf = await downloadWithRetry(objectKey, 3);
       const checksum = sha256Hex(buf);
-      const extracted_text = await extractText(buf, contentType);
+
+      // Extract text (may be expensive). Try extraction, but prefer reusing existing extracted_text
+      // from another already-indexed row with the same checksum to avoid duplicated work.
+      let extracted_text = await extractText(buf, contentType);
+
+      try {
+        const existing = await pg.query(
+          "SELECT id, extracted_text FROM evidence WHERE checksum = $1 AND status = $2 LIMIT 1",
+          [checksum, "indexed"]
+        );
+        if (existing && existing.rowCount && existing.rowCount > 0 && existing.rows[0] && existing.rows[0].extracted_text) {
+          // Reuse previously extracted text for identical content to ensure idempotent processing.
+          extracted_text = existing.rows[0].extracted_text;
+          log('info', 'Worker: dedupe - reused extracted_text from existing checksum', { id, checksum: checksum.substring(0, 8), existing_id: existing.rows[0].id ?? null });
+        }
+      } catch (derr) {
+        log('warn', 'Worker: dedupe check failed', { id, checksum: checksum.substring(0, 8), err: (derr && (derr as any).message) || derr });
+      }
 
       const updateQ = "UPDATE evidence SET checksum = $1, extracted_text = $2, status = $3, indexed_at = now() WHERE id = $4";
       const vals = [checksum, extracted_text, "indexed", id];
