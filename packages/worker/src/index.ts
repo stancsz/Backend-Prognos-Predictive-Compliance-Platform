@@ -109,34 +109,69 @@ async function extractText(buffer: Buffer, contentType?: string | null): Promise
 async function processBatch() {
   if (!pg) return;
 
-  const s3 = s3Client();
-
-  const q = "SELECT id, project_id, filename, object_key, content_type FROM evidence WHERE status = 'uploaded_pending' ORDER BY created_at ASC LIMIT $1";
-  let rows: any[] = [];
+  // Atomically claim rows for processing using a transaction + SELECT ... FOR UPDATE SKIP LOCKED
+  let claimedRows: any[] = [];
   try {
-    const res = await pg.query(q, [BATCH_SIZE]);
-    rows = res.rows || [];
+    await pg.query("BEGIN");
+    const selectRes = await pg.query(
+      "SELECT id, project_id, filename, object_key, content_type FROM evidence WHERE status = $1 ORDER BY created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED",
+      ["uploaded_pending", BATCH_SIZE]
+    );
+    claimedRows = selectRes.rows || [];
+
+    if (claimedRows.length === 0) {
+      await pg.query("COMMIT");
+      return;
+    }
+
+    const ids = claimedRows.map((r: any) => r.id);
+    // mark as processing so other workers won't pick them up
+    await pg.query("UPDATE evidence SET status = $1 WHERE id = ANY($2::text[])", ["processing", ids]);
+    await pg.query("COMMIT");
   } catch (err) {
-    console.error("Worker: failed to query evidence rows:", err);
+    console.error("Worker: failed to claim rows for processing:", err);
+    try { await pg.query("ROLLBACK"); } catch (_) { /* ignore */ }
     return;
   }
 
-  if (rows.length === 0) return;
+  if (claimedRows.length === 0) return;
 
-  console.log(`Worker: processing ${rows.length} evidence items`);
+  const s3 = s3Client();
+  console.log(`Worker: claimed ${claimedRows.length} evidence items for processing`);
 
-  for (const row of rows) {
+  // download with retry/backoff
+  async function downloadWithRetry(key: string, attempts = 3): Promise<Buffer> {
+    let lastErr: any = null;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await downloadObject(s3, S3_BUCKET, key);
+      } catch (e) {
+        lastErr = e;
+        const backoffMs = 500 * Math.pow(2, i);
+        log('warn', 's3 download failed, retrying', { key, attempt: i + 1, err: (e && (e as any).message) || e, backoffMs });
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
+    throw lastErr;
+  }
+
+  for (const row of claimedRows) {
     const id = row.id;
     const objectKey = row.object_key || row.objectKey;
     const contentType = row.content_type || row.contentType || null;
 
     if (!objectKey) {
-      console.warn("Worker: skipping row with no object_key", id);
+      log('warn', 'Worker: skipping row with no object_key', { id });
+      try {
+        await pg.query("UPDATE evidence SET status = $1 WHERE id = $2", ["index_error", id]);
+      } catch (uerr) {
+        log('error', 'Worker: failed to mark index_error for missing object_key', { id, err: (uerr && (uerr as any).message) || uerr });
+      }
       continue;
     }
 
     try {
-      const buf = await downloadObject(s3, S3_BUCKET, objectKey);
+      const buf = await downloadWithRetry(objectKey, 3);
       const checksum = sha256Hex(buf);
       const extracted_text = await extractText(buf, contentType);
 
@@ -144,13 +179,14 @@ async function processBatch() {
       const vals = [checksum, extracted_text, "indexed", id];
       await pg.query(updateQ, vals);
 
-      console.log(`Worker: indexed id=${id} checksum=${checksum.substring(0, 8)}...`);
+      log('info', 'Worker: indexed evidence', { id, checksum: checksum.substring(0, 8) });
+      lastIndexedAt = new Date().toISOString();
     } catch (err) {
-      console.error(`Worker: failed processing id=${id}:`, (err && (err as any).message) || err);
+      log('error', 'Worker: failed processing evidence', { id, err: (err && (err as any).message) || err });
       try {
         await pg.query("UPDATE evidence SET status = $1 WHERE id = $2", ["index_error", id]);
       } catch (uerr) {
-        console.error("Worker: failed to mark index_error:", uerr);
+        log('error', 'Worker: failed to mark index_error', { id, err: (uerr && (uerr as any).message) || uerr });
       }
     }
   }
