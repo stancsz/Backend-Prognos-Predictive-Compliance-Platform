@@ -40,6 +40,28 @@ Testing
 - Run tests:
   - npm test
 
+Running live integration tests (Postgres + MinIO)
+Prerequisites
+- Docker Desktop / Docker Engine running locally.
+- Ports 4000, 5432, 9000 available on localhost.
+- From repo root ensure dependencies are installed: `npm ci`
+
+Quick local flow (recommended)
+1. Bring up infra:
+   - ./scripts/test-infra-up.sh
+   This will docker compose up --build the stack and wait for the API and MinIO readiness endpoints.
+
+2. Run the live integration tests:
+   - npm --prefix packages/api run test:integration:live
+
+3. Teardown infra:
+   - ./scripts/test-infra-down.sh
+
+Notes
+- The CI workflow includes an `integration-live` job that runs docker-compose on ubuntu-latest and executes the same live tests. See `.github/workflows/ci.yml`.
+- If your host cannot run Docker, consider running the CI job or using remote Postgres/MinIO and configuring env vars (DATABASE_URL, AWS_ENDPOINT, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET) before running `npm --prefix packages/api run test:integration:live`.
+- For deterministic runs add `infra/test.env` and load it when bringing up infra; this repo provides `scripts/test-infra-up.sh` and `scripts/test-infra-down.sh` for convenience.
+
 Docker
 - Local dev Dockerfile: packages/api/Dockerfile
 - Infra build uses: infra/Dockerfile.api (updated to run `dist/server.js`)

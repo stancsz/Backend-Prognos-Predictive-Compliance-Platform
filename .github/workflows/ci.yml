@@ -50,3 +50,43 @@ jobs:
       - name: Ensure infra compose file is valid YAML
         run: |
           python -c "import sys,yaml,io; yaml.safe_load(open('infra/docker-compose.yml')); print('docker-compose.yml OK')"
+
+  integration-live:
+    name: integration — live (docker-compose)
+    runs-on: ubuntu-latest
+    needs: api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Bring up infra (docker-compose)
+        run: docker compose -f infra/docker-compose.yml up --build -d
+
+      - name: Wait for API and MinIO readiness
+        run: |
+          set -e
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:4000/ready >/dev/null 2>&1 && curl -fsS http://localhost:9000/minio/health/ready >/dev/null 2>&1; then
+              echo "services ready"
+              exit 0
+            fi
+            echo "waiting for services... ($i/60)"
+            sleep 2
+          done
+          echo "services failed to become ready" >&2
+          exit 1
+
+      - name: Install dependencies for api
+        run: npm ci --prefix packages/api
+
+      - name: Run live integration tests
+        run: npm --prefix packages/api run test:integration:live
+
+      - name: Teardown infra
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
