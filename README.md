@@ -15,6 +15,9 @@ Use this README for a high-level orientation and quick commands to get the backe
 1. From repo root install dependencies:
    - npm ci
 
+   Optionally copy the example environment file for local development:
+   - cp packages/api/.env.example .env
+
 2. Install only for API (if working inside `packages/api`):
    - npm ci --prefix packages/api
 
