@@ -535,6 +535,41 @@ export async function startServer(opts?: { port?: number; dataDir?: string; data
     pg = new PgClient({ connectionString: DATABASE_URL });
     await pg.connect();
     console.log("Connected to Postgres");
+
+    // Ensure required tables exist (idempotent). This mirrors packages/api/scripts/ensure_schema.js
+    try {
+      await pg.query(`
+        CREATE TABLE IF NOT EXISTS evidence (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          filename TEXT,
+          object_key TEXT NOT NULL,
+          content_type TEXT,
+          uploader TEXT,
+          status TEXT,
+          checksum TEXT,
+          extracted_text TEXT,
+          indexed_at TIMESTAMP WITH TIME ZONE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+        );
+      `);
+
+      await pg.query(`
+        CREATE TABLE IF NOT EXISTS mappings (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          evidence_id TEXT NOT NULL,
+          control_id TEXT NOT NULL,
+          notes TEXT,
+          created_by TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+        );
+      `);
+
+      console.log("Ensured Postgres schema");
+    } catch (schemaErr) {
+      console.warn("Failed to ensure schema at startup:", schemaErr);
+    }
   }
 
   const s3 = createS3ClientFromEnv();

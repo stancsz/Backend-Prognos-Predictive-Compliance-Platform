@@ -2,20 +2,23 @@
   "name": "packages-api",
   "version": "0.1.0",
   "private": true,
-  "main": "dist/server.js",
+  "main": "dist/index.js",
+
   "scripts": {
     "build": "tsc -p .",
-    "start": "node dist/server.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "clean": "rimraf dist || (if exist dist rmdir /s /q dist)",
     "e2e": "node test/upload_e2e.js",
     "migrate": "node scripts/run_migrations.js",
     "migrate-local": "node scripts/run_migrations_local.js",
     "ensure-schema": "node scripts/ensure_schema.js",
+    "copy-api-env": "cp .env.example .env || powershell -Command \"Copy-Item -Path .env.example -Destination .env -Force\"",
     "lint": "eslint . --ext .ts,.js",
     "test": "mocha --require ts-node/register \"test/*.test.ts\" \"test/integration/**/*.test.ts\" || echo \"no tests\"",
     "test:integration": "mocha --require ts-node/register \"test/integration/**/*.test.ts\"",
-    "test:integration:live": "mocha --require ts-node/register \"test/integration-live/**/*.test.ts\""
+    "test:integration:live": "mocha --require ts-node/register \"test/integration-live/**/*.test.ts\"",
+    "validate-openapi": "node -e \"const fs=require('fs');const y=fs.readFileSync('openapi.yaml','utf8'); if(!y || !y.includes('openapi:')){console.error('openapi.yaml seems invalid'); process.exit(1);} console.log('openapi.yaml OK');\""
   },
   "dependencies": {
     "express": "^4.18.2",
