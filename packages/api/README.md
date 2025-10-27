@@ -1,76 +1,73 @@
-# Prognos API (packages/api)
+# Prognos — API (packages/api)
 
-This folder contains the backend API for the Prognos frontend. The backend is being refactored and a minimal TypeScript scaffold has been added to accelerate integration with the frontend.
+This document explains how to run and test the Prognos API locally and in CI.
 
-Status: WIP — scaffolded (app.ts, server.ts), Dockerfile, and basic project config.
-
-Quickstart (local)
-1. From repo root install dependencies:
-   - cd packages/api
-   - npm ci
-
-2. Run in development (hot reload):
-   - npm run dev
-   This runs `ts-node-dev` against `src/server.ts` and starts the API on PORT (default 4000).
-
-3. Run with Docker (uses infra/docker-compose.yml):
-   - docker-compose -f infra/docker-compose.yml up --build
-   Services started: postgres, minio, api, worker, demo-runner (per infra compose).
-
-API contract
-- OpenAPI placeholder: packages/api/openapi.yaml
-- Important endpoints:
-  - GET /health
-  - GET /ready
-  - POST /uploads
-  - GET /frameworks
-  - GET /frameworks/{id}/controls
-  - POST /mappings
-  - GET /projects/{id}/summary
-
-Scaffold notes
-- New entrypoint: src/server.ts -> starts the app via src/app.ts:startServer
-- Persistence is pluggable:
-  - If DATABASE_URL is set, Postgres is used.
-  - Otherwise the code falls back to JSONL files under packages/api/data/
-- S3: createS3ClientFromEnv reads AWS_ENDPOINT + credentials for MinIO usage.
-
-Testing
-- Test runner: mocha (existing) — supertest added as a dev dependency for endpoint tests
-- Run tests:
-  - npm test
-
-Running live integration tests (Postgres + MinIO)
 Prerequisites
-- Docker Desktop / Docker Engine running locally.
-- Ports 4000, 5432, 9000 available on localhost.
-- From repo root ensure dependencies are installed: `npm ci`
+- Node 18+ / npm
+- Docker (for live integration tests)
+- Ports: 4000 (API), 5432 (Postgres), 9000 (MinIO) available when using docker-compose
 
-Quick local flow (recommended)
-1. Bring up infra:
-   - ./scripts/test-infra-up.sh
-   This will docker compose up --build the stack and wait for the API and MinIO readiness endpoints.
+Install
+1. From repo root:
+   npm ci
 
-2. Run the live integration tests:
-   - npm --prefix packages/api run test:integration:live
+2. Install only API deps (optional if working only in packages/api):
+   npm ci --prefix packages/api
 
-3. Teardown infra:
-   - ./scripts/test-infra-down.sh
+Run locally (dev)
+- Start the API in dev mode (uses ts-node-dev):
+  npm --prefix packages/api run dev
+- Default port: 4000
+- Dev environment variables (optional):
+  - PORT (defaults to 4000)
+  - DATABASE_URL (Postgres connection string)
+  - AWS_ENDPOINT (MinIO/ S3 endpoint)
+  - AWS_ACCESS_KEY_ID
+  - AWS_SECRET_ACCESS_KEY
+  - S3_BUCKET (bucket name)
+
+Quick commands (build / start)
+- Build:
+  npm --prefix packages/api run build
+- Start built server:
+  npm --prefix packages/api run start
+
+Health & readiness
+- GET /health — basic status ({ status: "ok", db: boolean })
+- GET /ready — readiness check; returns { ready: boolean, db: boolean, s3: boolean, bucket: string }
+
+OpenAPI and docs
+- GET /api/openapi.yaml — serves the OpenAPI spec
+- GET /api/docs — minimal Swagger UI for the spec
+
+Tests
+- Unit & integration tests (JSONL fallback, no infra needed):
+  npm --prefix packages/api test
+- Integration tests (non-live):
+  npm --prefix packages/api run test:integration
+- Live integration tests (requires docker infra):
+  1. From repo root bring up infra:
+     ./scripts/test-infra-up.sh
+  2. Run live tests:
+     npm --prefix packages/api run test:integration:live
+  3. Teardown:
+     ./scripts/test-infra-down.sh
+
+Scripts
+- Ensure DB schema (used in CI / migrations):
+  npm --prefix packages/api run ensure-schema
+- Run migrations:
+  npm --prefix packages/api run migrate
 
 Notes
-- The CI workflow includes an `integration-live` job that runs docker-compose on ubuntu-latest and executes the same live tests. See `.github/workflows/ci.yml`.
-- If your host cannot run Docker, consider running the CI job or using remote Postgres/MinIO and configuring env vars (DATABASE_URL, AWS_ENDPOINT, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET) before running `npm --prefix packages/api run test:integration:live`.
-- For deterministic runs add `infra/test.env` and load it when bringing up infra; this repo provides `scripts/test-infra-up.sh` and `scripts/test-infra-down.sh` for convenience.
+- The API falls back to JSONL persistence under `packages/api/data/` if DATABASE_URL is not supplied; this makes local lightweight development fast and idempotent for tests.
+- When running live integration tests, ensure MinIO and Postgres are reachable. The `create_minio_bucket.js` helper is used during startup to ensure the S3 bucket exists.
+- Tests that interact with S3 or Postgres are written to be idempotent; if you add tests that create persistent resources, make sure they clean up after themselves.
 
-Docker
-- Local dev Dockerfile: packages/api/Dockerfile
-- Infra build uses: infra/Dockerfile.api (updated to run `dist/server.js`)
+Troubleshooting
+- If ports conflict, stop the conflicting service or change ports in infra/docker-compose.yml.
+- If MinIO bucket creation fails in CI, check AWS_ENDPOINT, credentials, and bucket name.
 
-Next steps (short)
-- Add/restore OpenAPI spec content in packages/api/openapi.yaml
-- Add basic integration test for /health (supertest)
-- Decide fate of legacy `packages/api/src/index.ts` (archive or remove)
-- Add CI workflow for lint, typecheck, tests
-
-Contacts & references
-- See top-level README.md and docs/ for architecture and roadmap.
+Further reading
+- Root README.md for project-level instructions and infra composition.
+- infra/README.md for docker-compose details.
