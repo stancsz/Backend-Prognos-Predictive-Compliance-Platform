@@ -84,6 +84,21 @@ export function createApp(resources?: Partial<Resources>) {
   const app = express();
   app.use(express.json());
 
+  // request logging & request-id middleware
+  app.use((req: any, res: any, next: any) => {
+    const reqId = generateId();
+    req.id = reqId;
+    const start = Date.now();
+    if (res && typeof res.on === "function") {
+      res.on("finish", () => {
+        const duration = Date.now() - start;
+        console.log(`[${reqId}] ${req.method} ${req.originalUrl || req.url} ${res.statusCode} ${duration}ms`);
+      });
+    }
+    try { res.setHeader && res.setHeader("X-Request-Id", reqId); } catch (e) {}
+    next();
+  });
+
   // dev auth middleware (permissive)
   app.use((req: any, _res: any, next: any) => {
     const token = req.headers["x-dev-token"] || req.headers["x-user-email"];
@@ -102,8 +117,22 @@ export function createApp(resources?: Partial<Resources>) {
 
   // readiness
   app.get("/ready", async (_req, res) => {
-    const dbOk = !!pg;
+    let dbOk = true;
     let s3Ok = true;
+ 
+    // check Postgres connection if configured
+    if (pg) {
+      try {
+        // simple lightweight ping
+        await pg.query("SELECT 1");
+        dbOk = true;
+      } catch (dbErr) {
+        console.warn("Postgres readiness check failed:", dbErr && (dbErr as any).message ? (dbErr as any).message : dbErr);
+        dbOk = false;
+      }
+    }
+
+    // check S3/MinIO bucket reachable if configured
     try {
       if (s3) {
         await s3.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
@@ -111,6 +140,7 @@ export function createApp(resources?: Partial<Resources>) {
     } catch (err) {
       s3Ok = false;
     }
+
     const ready = dbOk && s3Ok;
     res.json({ ready, db: dbOk, s3: s3Ok, bucket: S3_BUCKET });
   });
