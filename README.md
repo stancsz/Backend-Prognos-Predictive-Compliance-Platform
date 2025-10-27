@@ -59,6 +59,44 @@ Environment variables (optional)
   - AWS_SECRET_ACCESS_KEY
   - S3_BUCKET
 
+## Testing, logs, and proof of working
+
+This repository includes automated unit, integration, and live integration tests. Follow these steps to run tests, collect logs, and produce artifacts that serve as proof the stack worked.
+
+Local end-to-end test & logs (docker-compose)
+1. Bring up the infra stack (Postgres, MinIO, API, frontend if configured, test-runner):
+   - ./scripts/test-infra-up.sh
+2. Run the live integration tests (from repo root):
+   - npm --prefix packages/api run test:integration:live
+   - or run the test-runner inside compose:
+     - docker compose -f infra/docker-compose.yml up --build --exit-code-from test-runner test-runner
+3. Dump logs to files for inspection or CI artifact upload:
+   - docker compose -f infra/docker-compose.yml logs --no-color --timestamps > ci-logs.txt
+   - docker compose -f infra/docker-compose.yml logs api > api-logs.txt
+   - docker compose -f infra/docker-compose.yml logs frontend > frontend-logs.txt
+   - docker compose -f infra/docker-compose.yml logs test-runner > test-runner-logs.txt
+
+What to collect as proof
+- Test runner output (stdout) captured to `ci-logs.txt` or `test-runner-logs.txt`.
+- Test result artifacts (e.g., `junit.xml`, `mochawesome` reports, Playwright traces/screenshots) — configure test scripts to emit these into a `test-results/` directory.
+- Docker-compose logs for `api`, `frontend`, and `test-runner`.
+- Any S3/MinIO object keys created during the test (list via MinIO client or AWS CLI against the test bucket).
+- DB snapshot or row counts if applicable (use a dedicated test schema to avoid contaminating other data).
+
+CI guidance (what to add to `.github/workflows/ci.yml`)
+- Add steps to:
+  - Bring up the combined compose stack (use `infra/docker-compose.yml`).
+  - Run the `test-runner` (or `npm --prefix packages/api run test:integration:live`) and fail the job on non-zero exit.
+  - Collect logs and test artifacts and upload them as workflow artifacts:
+    - `docker compose -f infra/docker-compose.yml logs --no-color --timestamps > ci-logs.txt`
+    - Use `actions/upload-artifact` for `ci-logs.txt`, `test-results/`, and any screenshots/traces.
+  - Use `--exit-code-from test-runner` when running compose in CI so the job exits with the test-runner status.
+
+Troubleshooting tips
+- If tests are flaky, add healthchecks and a `wait-for-ready.sh` script that the `test-runner` uses to wait for `/ready` on the API and the frontend health endpoint before starting tests.
+- Ensure tests are idempotent: clean up S3 objects and DB rows, or provision ephemeral buckets/schemas per run.
+- For local debugging, run `docker compose -f infra/docker-compose.yml up` without `--exit-code-from` and inspect logs interactively.
+
 ## CI
 A GitHub Actions job `integration-live` is included in `.github/workflows/ci.yml`. It brings up the docker-compose stack, waits for readiness, runs the live tests, and tears down the stack.
 

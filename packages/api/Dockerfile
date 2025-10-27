@@ -19,4 +19,4 @@ RUN npm prune --production
 
 EXPOSE 4000
 ENV NODE_ENV=production
-CMD ["node", "dist/server.js"]
+CMD ["node", "dist/index.js"]
