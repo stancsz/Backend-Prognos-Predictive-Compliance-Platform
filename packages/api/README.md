@@ -14,6 +14,9 @@ Install
 2. Install only API deps (optional if working only in packages/api):
    npm ci --prefix packages/api
 
+3. Copy example environment variables for local development (convenience):
+   npm run copy-api-env
+
 Run locally (dev)
 - Start the API in dev mode (uses ts-node-dev):
   npm --prefix packages/api run dev
@@ -34,7 +37,9 @@ Quick commands (build / start)
 
 Health & readiness
 - GET /health — basic status ({ status: "ok", db: boolean })
+  - Example: `curl -sS http://localhost:4000/health | jq .`
 - GET /ready — readiness check; returns { ready: boolean, db: boolean, s3: boolean, bucket: string }
+  - Example: `curl -sS http://localhost:4000/ready | jq .`
 
 OpenAPI and docs
 - GET /api/openapi.yaml — serves the OpenAPI spec

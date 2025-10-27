@@ -13,6 +13,7 @@
     "test:integration:live": "npm --prefix packages/api run test:integration:live",
     "infra:up": "sh ./scripts/test-infra-up.sh",
     "infra:down": "sh ./scripts/test-infra-down.sh",
+    "copy-api-env": "cp packages/api/.env.example packages/api/.env || powershell -Command \"Copy-Item -Path packages/api/.env.example -Destination packages/api/.env -Force\"",
     "ensure-schema": "npm --prefix packages/api run ensure-schema",
     "migrate:api": "npm --prefix packages/api run migrate"
   }
