@@ -1,147 +1,67 @@
-# Planner Tasks — Prognos API
+# Planner / Completed Tasks
 
-This file contains the actionable tasks derived from the project plan for the Prognos backend API.
+This file summarizes implemented tasks from the Planner and lists next steps.
 
-## Todo checklist
-- [ ] Verify local dev setup and dependencies
-- [ ] Stabilize /health and /ready endpoints
-- [ ] Add robust readiness checks (Postgres + MinIO)
-- [ ] Ensure DB migrations are idempotent and reliable
-- [ ] Implement uploads API (S3/MinIO-backed)
-- [ ] Implement mappings API (CRUD + listing)
-- [ ] Implement project summary endpoint
-- [ ] Sync and update OpenAPI spec
-- [ ] Harden tests (cleanup, idempotency, live integration)
-- [ ] Improve infra scripts & docker-compose reliability
-- [ ] Fix CI workflow race conditions
-- [ ] Verify frontend contract & add stubs if required
-- [ ] Update documentation & developer quickstart
+## Completed (verified locally)
+- [x] Health and readiness endpoints
+  - Files: `packages/api/src/app.ts`
+  - Notes: `/health` and `/ready` endpoints implemented and unit tests pass.
 
-## Tasks (detailed)
+- [x] Uploads endpoint (JSONL fallback + S3 presign)
+  - Files: `packages/api/src/app.ts`, `packages/api/scripts/create_minio_bucket.js`
+  - Notes: `POST /uploads` returns `uploadId`, `url` (presigned when S3 configured) and persists metadata to `data/evidence.jsonl` when Postgres is not configured. Integration tests validate JSONL flow.
 
-1) Verify local dev setup and dependencies
-- Objective: Confirm developer commands and dependency install work reliably.
-- Files to inspect/modify:
-  - `README.md`
-  - `packages/api/package.json`
-  - `packages/api/.env.example`
-- Expected output:
-  - `npm ci` completes
-  - `npm --prefix packages/api run dev` starts server on port 4000
-  - Quickstart documentation updated if discrepancies found
+- [x] Mappings endpoint (create + list)
+  - Files: `packages/api/src/app.ts`
+  - Notes: `POST /mappings` persists mapping to Postgres when available, else to `data/mappings.jsonl`. `GET /mappings?projectId=...` returns mappings.
 
-2) Stabilize /health and /ready endpoints
-- Objective: Ensure deterministic health/readiness endpoints and tests.
-- Files to modify:
-  - `packages/api/src/app.ts`
-  - `packages/api/src/server.ts`
-  - `packages/api/test/health.test.ts`
-  - `packages/api/test/ready.test.ts`
-- Expected output:
-  - Unit tests pass
-  - `/health` returns 200 with `{ status: "ok" }`
-  - `/ready` returns object containing boolean `ready`, `db`, `s3`, `bucket`
+- [x] Project summary endpoint
+  - Files: `packages/api/src/app.ts`
+  - Notes: `GET /projects/{id}/summary` returns aggregated counts (totalEvidence, indexedEvidence, mappingsCount, controlsTotal, controlsCovered). Integration tests validate counts using JSONL fallback.
 
-3) Add robust readiness checks (Postgres + MinIO)
-- Objective: Make `/ready` verify DB connectivity and S3 bucket availability.
-- Files to modify:
-  - `packages/api/src/app.ts`
-  - `packages/api/src/server.ts`
-  - `packages/api/scripts/ensure_schema.js`
-  - `scripts/test-infra-up.sh`
-  - `infra/docker-compose.yml` (if needed)
-- Expected output:
-  - `/ready` returns `ready: true` only when DB and S3 are reachable
-  - infra bring-up scripts wait on `/ready`
+- [x] OpenAPI spec for core endpoints
+  - Files: `packages/api/openapi.yaml`
+  - Notes: Spec documents `/health`, `/ready`, `/uploads`, `/frameworks`, `/mappings`, `/projects/{id}/summary`.
 
-4) Ensure DB migrations are idempotent and reliable
-- Objective: Make migrations safe for repeated runs and CI.
-- Files to modify:
-  - `infra/migrations/*.sql`
-  - `packages/api/scripts/run_migrations*.js`
-  - `packages/api/scripts/ensure_schema.js`
-- Expected output:
-  - Migrations run without errors in CI and locally
-  - Tests can run migrations as part of setup
+- [x] Basic local test harness
+  - Files: `packages/api/package.json`, `packages/api/test/*`
+  - Notes: `npm --prefix packages/api run test` passes locally (unit + integration JSONL tests).
 
-5) Implement uploads API (S3/MinIO-backed)
-- Objective: Provide multipart file upload flow and persist metadata.
-- Files to modify/create:
-  - `packages/api/src/routes/uploads*.ts` or extend `src/app.ts`
-  - `packages/api/src/app.ts` (route registration)
-  - `packages/api/scripts/create_minio_bucket.js`
-- Expected output:
-  - `/uploads` accepts filename/projectId and returns presigned URL + metadata
-  - Metadata persisted in Postgres (preferred) or JSONL fallback
+## Remaining / Next steps
+- [ ] DB migrations & automated apply during infra startup
+  - Files: `infra/migrations/*`, `packages/api/scripts/run_migrations*.js`, `scripts/test-infra-up.sh`
+  - Goal: Ensure Postgres migrations are applied in CI and local docker-compose run.
 
-6) Implement mappings API
-- Objective: Provide CRUD for mappings used by frontend.
-- Files to modify/create:
-  - `packages/api/src/routes/mappings*.ts` or extend `src/app.ts`
-  - `packages/api/openapi.yaml`
-- Expected output:
-  - `/mappings` GET/POST implemented and documented
-  - Seed/sample data available under `packages/api/data` or JSONL
+- [ ] Harden live integration tests (Postgres + MinIO)
+  - Files: `packages/api/test/integration-live/*`, `scripts/test-infra-up.sh`, `scripts/test-infra-down.sh`, `infra/docker-compose.yml`
+  - Goal: Make `npm --prefix packages/api run test:integration:live` reliable under Docker.
 
-7) Implement project summary endpoint
-- Objective: Aggregate per-project metrics for dashboard.
-- Files to modify/create:
-  - `packages/api/src/routes/projects*.ts` or extend `src/app.ts`
-  - `packages/api/src/services/project-summary.ts` (new)
-  - Integration tests under `packages/api/test/integration`
-- Expected output:
-  - `/projects/{id}/summary` returns counts and metadata matching frontend expectations
+- [ ] CI workflow validation
+  - Files: `.github/workflows/ci.yml`
+  - Goal: Ensure `integration-live` job runs reliably on GitHub Actions.
 
-8) Sync and update OpenAPI spec
-- Objective: Keep `openapi.yaml` aligned with implemented endpoints.
-- Files to modify:
-  - `packages/api/openapi.yaml`
-  - `packages/api/README.md` (examples)
-- Expected output:
-  - OpenAPI includes `/health`, `/ready`, `/uploads`, `/mappings`, `/projects/{id}/summary`
+- [ ] Frontend integration smoke test
+  - Files: `Frontend-Prognos-Predictive-Compliance-Platform/src/lib/api.ts`
+  - Goal: Confirm frontend calls match API spec and basic UI renders when pointing to local API.
 
-9) Harden tests (cleanup, idempotency, live integration)
-- Objective: Make tests deterministic and clean up external resources.
-- Files to modify:
-  - `packages/api/test/**`
-  - `packages/api/test/helpers/live-helpers.ts`
-  - `packages/api/test/integration-live/**`
-- Expected output:
-  - Live integration tests pass locally and in CI
-  - Tests remove created S3 objects and DB rows
+- [ ] Documentation polish / onboarding
+  - Files: `README.md`, `packages/api/README.md`, `DOCKER_COMPOSE_README.md`
+  - Goal: Clear quickstart and env var guidance for local developers.
 
-10) Improve infra scripts & docker-compose reliability
-- Objective: Make infra bring-up/teardown robust and documented.
-- Files to modify:
-  - `infra/docker-compose.yml`
-  - `scripts/test-infra-up.sh`
-  - `scripts/test-infra-down.sh`
-  - `DOCKER_COMPOSE_README.md`
-- Expected output:
-  - Infra scripts wait on `/ready` and handle retries/teardown cleanly
+## How to run tests locally
+1. Install dependencies (repo root)
+```bash
+npm ci
+npm ci --prefix packages/api
+```
 
-11) Fix CI workflow race conditions
-- Objective: Ensure `.github/workflows/ci.yml` mirrors reliable local steps.
-- Files to modify:
-  - `.github/workflows/ci.yml`
-  - `infra/CI_RUN.md` (optional)
-- Expected output:
-  - `integration-live` job consistently passes
+2. Run unit + integration (JSONL) tests for API
+```bash
+npm --prefix packages/api run test
+```
 
-12) Verify frontend contract & add stubs if required
-- Objective: Ensure backend payloads/paths match frontend expectations.
-- Files to inspect/modify:
-  - `Frontend-Prognos-Predictive-Compliance-Platform/src/lib/api.ts`
-  - `packages/api/openapi.yaml`
-- Expected output:
-  - Backend and frontend agree on API contract
-
-13) Update documentation & developer quickstart
-- Objective: Consolidate docs for running, testing, and CI.
-- Files to modify:
-  - `README.md`, `packages/api/README.md`, `DOCKER_COMPOSE_README.md`, `packages/api/.env.example`
-- Expected output:
-  - Clear guide for new contributors to run and test the project
-
-## Execution order (recommended)
-1 → 2 → 3 → 4 → 5 & 6 (parallel if separate devs) → 7 → 8 → 9 → 10 → 11 → 12 → 13
+3. To run live integration tests (requires Docker)
+```bash
+./scripts/test-infra-up.sh
+npm --prefix packages/api run test:integration:live
+./scripts/test-infra-down.sh
