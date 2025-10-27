@@ -280,6 +280,56 @@ export function createApp(resources?: Partial<Resources>) {
     }
   });
 
+  // list mappings for a project
+  app.get("/mappings", async (req: any, res) => {
+    try {
+      const projectId = String(req.query?.projectId || "");
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId_required" });
+      }
+
+      let mappings: any[] = [];
+
+      if (pg) {
+        try {
+          const q = await pg.query(
+            `SELECT id, project_id as projectid, evidence_id as evidenceid, control_id as controlid, notes, created_by as createdby, created_at
+             FROM mappings WHERE project_id = $1 ORDER BY created_at ASC`,
+            [projectId]
+          );
+          mappings = q.rows.map((r: any) => ({
+            id: r.id,
+            projectId: r.projectid,
+            evidenceId: r.evidenceid,
+            controlId: r.controlid,
+            notes: r.notes,
+            createdBy: r.createdby,
+            createdAt: r.created_at
+          }));
+        } catch (e) {
+          console.error("failed to query mappings:", e);
+          mappings = [];
+        }
+      } else {
+        try {
+          const MAPPINGS_FILE = path.join(dataDir, "mappings.jsonl");
+          if (fs.existsSync(MAPPINGS_FILE)) {
+            const raw = fs.readFileSync(MAPPINGS_FILE, "utf8");
+            mappings = raw.split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l)).filter((m: any) => m.projectId === projectId);
+          }
+        } catch (e) {
+          console.error("failed to read mappings.jsonl:", e);
+          mappings = [];
+        }
+      }
+
+      return res.json({ mappings });
+    } catch (err: any) {
+      console.error("GET /mappings error:", err);
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
   // project summary (counts)
   app.get("/projects/:id/summary", async (req, res) => {
     const projectId = String(req.params.id || "");
@@ -462,16 +512,27 @@ export async function startServer(opts?: { port?: number; dataDir?: string; data
   const app = createApp({ pg, s3, s3Bucket, dataDir });
 
   if (s3) {
-    // ensure bucket exists in dev
-    try {
-      await s3.send(new HeadBucketCommand({ Bucket: s3Bucket }));
-    } catch (err) {
+    // ensure bucket exists in dev with retries
+    const maxAttempts = 5;
+    let attempt = 0;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    while (attempt < maxAttempts) {
       try {
-        await s3.send(new CreateBucketCommand({ Bucket: s3Bucket }));
-        console.log("Created S3 bucket:", s3Bucket);
-      } catch (createErr) {
-        console.warn("Failed to create bucket:", createErr);
+        await s3.send(new HeadBucketCommand({ Bucket: s3Bucket }));
+        break;
+      } catch (err) {
+        try {
+          await s3.send(new CreateBucketCommand({ Bucket: s3Bucket }));
+          console.log("Created S3 bucket:", s3Bucket);
+          break;
+        } catch (createErr) {
+          console.warn(`Attempt ${attempt + 1} failed to ensure bucket:`, createErr);
+        }
       }
+      attempt++;
+      const backoff = Math.min(1000 * Math.pow(2, attempt), 10000);
+      // @ts-ignore
+      await sleep(backoff);
     }
   }
 
