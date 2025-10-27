@@ -1,11 +1,11 @@
-openapi: 3.0.3
+openapi: 3.0.0
 info:
   title: Prognos API
-  version: 0.1.0
-  description: OpenAPI spec for the Prognos backend (health, readiness, uploads, frameworks, mappings, project summary).
+  version: "0.1.0"
+  description: API used by the Prognos frontend. Minimal spec covering health, readiness, uploads, frameworks, mappings, and project summary.
 servers:
   - url: http://localhost:4000
-    description: Local dev
+    description: Local development server
 paths:
   /health:
     get:
@@ -17,27 +17,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+
   /ready:
     get:
-      summary: Readiness check (DB + S3)
+      summary: Readiness probe
       responses:
         '200':
-          description: Readiness status
+          description: Readiness status including DB and S3 availability
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ready: { type: boolean }
-                  db: { type: boolean }
-                  s3: { type: boolean }
-                  bucket: { type: string }
-  /frameworks:
-    get:
-      summary: List frameworks
+                $ref: '#/components/schemas/Readiness'
+
+  /uploads:
+    post:
+      summary: Create an upload (returns pre-signed URL or metadata)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
       responses:
         '200':
-          description: List of frameworks
+          description: Upload metadata or presigned URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Bad request (missing fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /frameworks:
+    get:
+      summary: List available frameworks
+      responses:
+        '200':
+          description: Framework list
           content:
             application/json:
               schema:
@@ -47,6 +73,7 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Framework'
+
   /frameworks/{id}/controls:
     get:
       summary: Get controls for a framework
@@ -56,7 +83,6 @@ paths:
           required: true
           schema:
             type: string
-          description: Framework id
       responses:
         '200':
           description: Controls list
@@ -71,27 +97,14 @@ paths:
                       $ref: '#/components/schemas/Control'
         '404':
           description: Framework not found
-  /uploads:
-    post:
-      summary: Create an upload presigned URL
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UploadRequest'
-      responses:
-        '200':
-          description: Upload URL and metadata
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UploadResponse'
-        '400':
-          description: Invalid request
+                $ref: '#/components/schemas/Error'
+
   /mappings:
     post:
-      summary: Persist a mapping (projectId, evidenceId, controlId)
+      summary: Create a mapping between evidence and a control
       requestBody:
         required: true
         content:
@@ -104,12 +117,20 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  mappingId: { type: string }
-                  createdAt: { type: string, format: date-time }
+                $ref: '#/components/schemas/MappingResponse'
         '400':
-          description: Missing required fields
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /projects/{id}/summary:
     get:
       summary: Project summary (counts)
@@ -121,11 +142,24 @@ paths:
             type: string
       responses:
         '200':
-          description: Summary object
+          description: Summary for a project
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProjectSummary'
+        '400':
+          description: Missing or invalid project id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   schemas:
     Health:
@@ -136,37 +170,87 @@ components:
           example: ok
         db:
           type: boolean
-    Framework:
+          example: false
+
+    Readiness:
       type: object
       properties:
-        id: { type: string }
-        name: { type: string }
-        version: { type: string }
-        description: { type: string }
-    Control:
-      type: object
-      properties:
-        id: { type: string }
-        title: { type: string }
-        description: { type: string }
+        ready:
+          type: boolean
+          example: true
+        db:
+          type: boolean
+          example: false
+        s3:
+          type: boolean
+          example: false
+        bucket:
+          type: string
+          example: local-minio-bucket
+
     UploadRequest:
       type: object
       required:
         - filename
         - projectId
       properties:
-        filename: { type: string }
-        projectId: { type: string }
-        contentType: { type: string }
+        filename:
+          type: string
+          example: sample.pdf
+        projectId:
+          type: string
+          example: project-123
+        contentType:
+          type: string
+          example: application/pdf
+
     UploadResponse:
       type: object
       properties:
-        uploadId: { type: string }
+        uploadId:
+          type: string
+          example: a1b2c3d4e5f6
         url:
-          oneOf:
-            - type: string
-            - type: "null"
-        objectKey: { type: string }
+          type: string
+          nullable: true
+          example: https://minio.local:9000/local-minio-bucket/evidence/...
+        objectKey:
+          type: string
+          example: evidence/project-123/a1b2c3/sample.pdf
+
+    Framework:
+      type: object
+      properties:
+        id:
+          type: string
+          example: soc2
+        name:
+          type: string
+          example: SOC 2
+        version:
+          type: string
+          example: 1.0
+        description:
+          type: string
+          example: "SOC 2 control framework"
+        controls:
+          type: array
+          items:
+            $ref: '#/components/schemas/Control'
+
+    Control:
+      type: object
+      properties:
+        id:
+          type: string
+          example: control-1
+        title:
+          type: string
+          example: "Access control"
+        description:
+          type: string
+          example: "Ensure only authorized users have access"
+
     MappingRequest:
       type: object
       required:
@@ -174,17 +258,64 @@ components:
         - evidenceId
         - controlId
       properties:
-        projectId: { type: string }
-        evidenceId: { type: string }
-        controlId: { type: string }
-        notes: { type: string }
+        projectId:
+          type: string
+          example: project-123
+        evidenceId:
+          type: string
+          example: evi-abc-123
+        controlId:
+          type: string
+          example: control-1
+        notes:
+          type: string
+          example: "Verified evidence matches control requirement"
+
+    MappingResponse:
+      type: object
+      properties:
+        mappingId:
+          type: string
+          example: m-12345
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-10-26T00:00:00.000Z"
+
     ProjectSummary:
       type: object
       properties:
-        projectId: { type: string }
-        totalEvidence: { type: integer }
-        indexedEvidence: { type: integer }
-        mappingsCount: { type: integer }
-        controlsTotal: { type: integer }
-        controlsCovered: { type: integer }
-        timestamp: { type: string, format: date-time }
+        projectId:
+          type: string
+          example: project-123
+        totalEvidence:
+          type: integer
+          format: int32
+          example: 5
+        indexedEvidence:
+          type: integer
+          format: int32
+          example: 2
+        mappingsCount:
+          type: integer
+          format: int32
+          example: 3
+        controlsTotal:
+          type: integer
+          format: int32
+          example: 50
+        controlsCovered:
+          type: integer
+          format: int32
+          example: 8
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-10-26T00:00:00Z"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "not_found"
