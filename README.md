@@ -12,8 +12,11 @@ Use this README for a high-level orientation and quick commands to get the backe
 - Local infra helpers: `scripts/test-infra-up.sh`, `scripts/test-infra-down.sh`
 
 ## Quickstart — backend (local)
-1. From repo root install dependencies:
-   - npm ci
+1. Install dependencies:
+   - To install only the API dependencies (recommended when working on the backend): `npm ci --prefix packages/api`
+   - To install all workspace dependencies from the repo root:
+     - If a root `package-lock.json` exists, run `npm ci`
+     - Otherwise run `npm install` (this will create a lockfile for reproducible installs)
 
    Optionally copy the example environment file for local development:
    - cp packages/api/.env.example .env
