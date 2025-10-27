@@ -1,0 +1,19 @@
+{
+  "name": "prognos-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --prefix packages/api run dev",
+    "build:api": "npm --prefix packages/api run build",
+    "start:api": "npm --prefix packages/api run start",
+    "test:api": "npm --prefix packages/api run test",
+    "test:integration:live": "npm --prefix packages/api run test:integration:live",
+    "infra:up": "sh ./scripts/test-infra-up.sh",
+    "infra:down": "sh ./scripts/test-infra-down.sh",
+    "ensure-schema": "npm --prefix packages/api run ensure-schema",
+    "migrate:api": "npm --prefix packages/api run migrate"
+  }
+}
